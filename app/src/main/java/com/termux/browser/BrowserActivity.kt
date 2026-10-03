@@ -18,6 +18,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import androidx.core.view.GravityCompat
 import androidx.webkit.WebViewCompat
 import com.termux.browser.ai.AdapterRegistry
 import com.termux.browser.ai.AiApiRunner
@@ -237,7 +238,7 @@ class BrowserActivity : Activity(), PageHost {
             androidx.drawerlayout.widget.DrawerLayout.LayoutParams(
                 dp(300),
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                android.view.Gravity.START
+                GravityCompat.START
             )
         )
         setContentView(drawerLayout)
@@ -385,17 +386,17 @@ class BrowserActivity : Activity(), PageHost {
     }
 
     internal fun toggleMenu() {
-        if (drawerLayout.isDrawerOpen(android.view.Gravity.START)) {
-            drawerLayout.closeDrawer(android.view.Gravity.START, false)
+        if (drawerLayout.isDrawerOpen(GravityCompat.START)) {
+            drawerLayout.closeDrawer(GravityCompat.START, false)
         } else {
-            drawerLayout.openDrawer(android.view.Gravity.START, false)
+            drawerLayout.openDrawer(GravityCompat.START, false)
         }
     }
 
     @Deprecated("Use back-press dispatch on newer platforms")
     override fun onBackPressed() {
-        if (drawerLayout.isDrawerOpen(android.view.Gravity.START)) {
-            drawerLayout.closeDrawer(android.view.Gravity.START)
+        if (drawerLayout.isDrawerOpen(GravityCompat.START)) {
+            drawerLayout.closeDrawer(GravityCompat.START)
         } else if (webView.canGoBack()) {
             webView.goBack()
         } else {

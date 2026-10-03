@@ -2,6 +2,7 @@ package com.termux.browser
 
 import android.os.Looper
 import android.os.SystemClock
+import androidx.core.view.GravityCompat
 import android.view.MotionEvent
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
@@ -128,15 +129,15 @@ class BrowserActivityTest {
     fun `menu button opens and closes the activity drawer`() {
         val activity = startActivity()
         assertFalse(
-            activity.drawerLayout.isDrawerOpen(android.view.Gravity.START)
+            activity.drawerLayout.isDrawerOpen(GravityCompat.START)
         )
         activity.menuButton.performClick()
         assertTrue(
-            activity.drawerLayout.isDrawerOpen(android.view.Gravity.START)
+            activity.drawerLayout.isDrawerOpen(GravityCompat.START)
         )
         activity.menuButton.performClick()
         assertFalse(
-            activity.drawerLayout.isDrawerOpen(android.view.Gravity.START)
+            activity.drawerLayout.isDrawerOpen(GravityCompat.START)
         )
     }
 
