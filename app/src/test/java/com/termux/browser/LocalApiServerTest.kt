@@ -62,9 +62,10 @@ class LocalApiServerTest {
             override suspend fun <T> run(block: suspend () -> T): T = block()
         }
         arbiter = CommandArbiter(scope, ui, host, controller, policy, results)
-        server = LocalApiServer(token, ui, arbiter, policy, log, results) {
-            StatusBody(state = policy.state.name)
-        }
+        server = LocalApiServer(
+            token, ui, arbiter, policy, log, results,
+            statusProvider = { StatusBody(state = policy.state.name) }
+        )
         port = runBlocking { server.start() }
     }
 
