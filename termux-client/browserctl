@@ -267,7 +267,8 @@ def cmd_watch(_args):
                     break
                 eid = body.get("eventId", since)
                 print(f"[{body.get('type')}] {body.get('commandId', '')} "
-                      f"{body.get('state', '')} {body.get('detail', '')[:160]}")
+                      f"{body.get('state', '')} {body.get('detail', '')[:160]}",
+                      flush=True)
                 since = max(since, eid)
                 if since != last_saved:
                     with open(os.path.expanduser("~/.config/termux-browser/last-event"),
