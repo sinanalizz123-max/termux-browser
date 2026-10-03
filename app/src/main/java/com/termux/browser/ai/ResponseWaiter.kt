@@ -27,7 +27,8 @@ data class Snapshot(
     val captcha: Boolean = false,
     val error: Boolean = false,
     val promptFound: Boolean = false,
-    val submitFound: Boolean = false
+    val submitFound: Boolean = false,
+    val markerFound: Boolean = false
 )
 
 interface SnapshotProvider {
@@ -56,7 +57,8 @@ object SnapshotParser {
                 captcha = bool("captcha"),
                 error = bool("error"),
                 promptFound = bool("promptFound"),
-                submitFound = bool("submitFound")
+                submitFound = bool("submitFound"),
+                markerFound = bool("markerFound")
             )
         }.getOrNull()
     }

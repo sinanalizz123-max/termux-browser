@@ -17,6 +17,10 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.webkit.WebViewCompat
+import com.termux.browser.ai.AdapterRegistry
+import com.termux.browser.ai.ChatGPTAdapter
+import com.termux.browser.ai.DeepSeekAdapter
+import com.termux.browser.ai.GenericAdapter
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -167,6 +171,9 @@ class BrowserActivity : Activity(), PageHost {
         notifier = SessionNotifier(this)
         arbiter = CommandArbiter(
             activityScope, uiRunner, this, controller, policy, results, bus,
+            registry = AdapterRegistry(
+                listOf(ChatGPTAdapter(), DeepSeekAdapter(), GenericAdapter())
+            ),
             onWorkChanged = { active -> onAutomationWorkChanged(active) }
         )
         apiToken = TokenStore(filesDir, tokenCryptoOverride ?: KeystoreTokenCrypto())

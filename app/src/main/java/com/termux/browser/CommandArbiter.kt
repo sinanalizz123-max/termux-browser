@@ -199,43 +199,47 @@ class CommandArbiter(
             JsPrompt.quotedStringList(selectors.prompt),
             JsPrompt.quotedStringList(selectors.submit)
         )
-        val ackRaw = ui.run { host.evalJs(submitScript) }
-        val ack = ackRaw?.let {
-            runCatching { json.parseToJsonElement(it).jsonObject }.getOrNull()
-        }
-        val submitted = ack?.get("submitted")?.jsonPrimitive?.content == "true"
-        if (!submitted) return failed(ErrorCodes.ADAPTER_UNRECOGNIZED)
-
-        val startGen = policy.generation
-        val startUrl = pageUrl
-        val provider = object : SnapshotProvider {
-            override suspend fun snapshot(): Snapshot {
-                val raw = ui.run { host.evalJs(adapter.snapshotScript()) }
-                return SnapshotParser.parse(raw) ?: Snapshot()
+        // Everything from here touches the prompt bridge: native cleanup in
+        // finally covers submit failure, waiter outcomes, and cancellation.
+        try {
+            val ackRaw = ui.run { host.evalJs(submitScript) }
+            val ack = ackRaw?.let {
+                runCatching { json.parseToJsonElement(it).jsonObject }.getOrNull()
             }
-        }
-        val outcome = ResponseWaiter(
-            snapshots = provider,
-            exited = {
-                ui.run {
-                    when {
-                        policy.state == ControlState.STOPPED -> "CANCELLED"
-                        policy.generation != startGen -> "USER_TAKEOVER"
-                        host.currentUrl() != startUrl -> "NAVIGATION_CHANGED"
-                        else -> null
-                    }
+            val submitted = ack?.get("submitted")?.jsonPrimitive?.content == "true"
+            if (!submitted) return failed(ErrorCodes.ADAPTER_UNRECOGNIZED)
+
+            val startGen = policy.generation
+            val startUrl = pageUrl
+            val provider = object : SnapshotProvider {
+                override suspend fun snapshot(): Snapshot {
+                    val raw = ui.run { host.evalJs(adapter.snapshotScript()) }
+                    return SnapshotParser.parse(raw) ?: Snapshot()
                 }
             }
-        ).await()
-        // Best-effort prompt cleanup after every outcome.
-        ui.run { runCatching { host.evalJs(JsPrompt.CLEAR_SCRIPT) } }
-        return when (outcome) {
-            is WaitResult.Completed -> {
-                val text = outcome.text.take(cmd.maxChars)
-                val truncated = outcome.text.length > cmd.maxChars
-                """{"state":"completed","text":${json.encodeToString(text)},"truncated":$truncated}"""
+            val outcome = ResponseWaiter(
+                snapshots = provider,
+                exited = {
+                    ui.run {
+                        when {
+                            policy.state == ControlState.STOPPED -> "CANCELLED"
+                            policy.generation != startGen -> "USER_TAKEOVER"
+                            host.currentUrl() != startUrl -> "NAVIGATION_CHANGED"
+                            else -> null
+                        }
+                    }
+                }
+            ).await()
+            return when (outcome) {
+                is WaitResult.Completed -> {
+                    val text = outcome.text.take(cmd.maxChars)
+                    val truncated = outcome.text.length > cmd.maxChars
+                    """{"state":"completed","text":${json.encodeToString(text)},"truncated":$truncated}"""
+                }
+                is WaitResult.Failed -> failed(outcome.code)
             }
-            is WaitResult.Failed -> failed(outcome.code)
+        } finally {
+            ui.run { runCatching { host.evalJs(JsPrompt.CLEAR_SCRIPT) } }
         }
     }
 

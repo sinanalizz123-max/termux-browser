@@ -48,4 +48,17 @@ class JsPromptTest {
     fun `clear script deletes the bridge`() {
         assertTrue(JsPrompt.CLEAR_SCRIPT.contains("delete window.__tbPrompt"))
     }
+
+    @Test
+    fun `submit script handles textarea and contenteditable composers`() {
+        val script = JsPrompt.submitScript("\"hi\"", "[\"textarea\"]", "[\"button\"]")
+        // Textarea/input branch: value assignment plus input/change events.
+        assertTrue(script.contains("pe.value=text"))
+        assertTrue(script.contains("new Event('input'"))
+        // Contenteditable branch: replaces existing DOM text.
+        assertTrue(script.contains("pe.isContentEditable"))
+        assertTrue(script.contains("pe.textContent=text"))
+        // Readonly elements are reported, never written blindly.
+        assertTrue(script.contains("prompt-readonly"))
+    }
 }
