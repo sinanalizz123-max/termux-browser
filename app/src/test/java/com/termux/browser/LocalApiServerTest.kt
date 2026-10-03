@@ -315,7 +315,10 @@ class LocalApiServerTest {
         assertTrue(consoleBody.contains("\"events\""))
         val (reportCode, reportBody) = get("/debug/report", hex)
         assertEquals(200, reportCode)
-        assertTrue(reportBody.contains("uptimeMs"))
+        assertTrue(
+            "report body was: ${reportBody.take(300)}",
+            reportBody.contains("uptimeMs")
+        )
         assertTrue(reportBody.contains("heapUsedMb"))
     }
 
