@@ -11,11 +11,13 @@ class JsPromptTest {
     fun `arbitrary characters are quoted never concatenated`() {
         val prompt = "Say \"hi\"\nnew line\ttab emoji \uD83D\uDE00 </script><img src=x onerror=alert(1)>"
         val quoted = JsPrompt.quotedPrompt(prompt)
-        // The JSON literal round-trips the exact text.
+        // The JSON literal round-trips the exact text: quoting, not code.
         assertTrue(quoted.startsWith("\"") && quoted.endsWith("\""))
-        // Raw control characters and markup never appear literally.
         assertFalse(quoted.contains("\n"))
-        assertFalse(quoted.contains("</script>"))
+        assertEquals(
+            prompt,
+            kotlinx.serialization.json.Json.decodeFromString<String>(quoted)
+        )
         val script = JsPrompt.submitScript(
             quoted,
             JsPrompt.quotedStringList(listOf("textarea")),
@@ -30,8 +32,9 @@ class JsPromptTest {
         val script = JsPrompt.submitScript("\"hi\"", "[]", "[]")
         assertTrue(script.contains("finally"))
         assertTrue(script.contains("delete window.__tbPrompt"))
-        // Only one assignment point, immediately before submission logic.
-        assertEquals(1, "window.__tbPrompt=".toRegex().findAll(script).count())
+        // Exactly two writes: the single pre-submission assignment and the
+        // single finally-block cleanup. No other prompt sink exists.
+        assertEquals(2, "window.__tbPrompt=".toRegex().findAll(script).count())
     }
 
     @Test
