@@ -23,6 +23,7 @@ class BrowserController(
 ) {
     private var activeGeneration: Int = policy.generation
     private var pendingUrl: String? = null
+    private var lastOpenedUrl: String? = null
 
     fun open(input: String, source: String): Boolean {
         val url = UrlPolicy.normalize(input)
@@ -33,6 +34,7 @@ class BrowserController(
         }
         activeGeneration = policy.generation
         pendingUrl = url
+        lastOpenedUrl = url
         host.loadUrl(url)
         log.add(source, "open", url)
         announce("[$source] Opening $url")
@@ -71,6 +73,7 @@ class BrowserController(
         policy.onUserNavigation()
         activeGeneration = policy.generation
         pendingUrl = null
+        lastOpenedUrl = url
         log.add("user", "navigate", url)
         announce("[user] Navigated to $url")
     }
@@ -78,14 +81,15 @@ class BrowserController(
     fun stop(source: String) {
         host.stopLoading()
         policy.onStop()
-        activeGeneration = policy.generation
         pendingUrl = null
         log.add(source, "stop", host.currentUrl() ?: "")
         announce("[$source] Stopped. Queued automation cleared.")
     }
 
     fun onPageFinished(url: String) {
-        if (activeGeneration != policy.generation) {
+        // Stale when the session generation moved on (takeover/stop) or the
+        // finished URL is not the currently expected page.
+        if (activeGeneration != policy.generation || url != lastOpenedUrl) {
             log.add("system", "stale_callback_ignored", url)
             return
         }

@@ -34,7 +34,9 @@ class BrowserControllerTest {
     fun `stale page finish after user navigation is ignored`() {
         val host = FakeHost()
         val announced = mutableListOf<String>()
-        val (controller, _, log) = controller(host, announced)
+        val (controller, policy, log) = controller(host, announced)
+        // Termux automation context owns the WebView for this command.
+        policy.onAutomationStart()
         controller.open("https://a.example", "termux")
         controller.userNavigated("https://b.example")
         // Delayed callback from A arrives after the user moved to B.
