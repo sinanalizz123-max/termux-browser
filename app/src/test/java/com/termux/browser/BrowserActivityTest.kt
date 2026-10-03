@@ -1,5 +1,7 @@
 package com.termux.browser
 
+import android.os.SystemClock
+import android.view.MotionEvent
 import org.junit.After
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -65,5 +67,15 @@ class BrowserActivityTest {
         val recreated = controller.recreate().get()
 
         assertTrue(recreated.statusView.text.contains("example.com"))
+    }
+
+    @Test
+    fun `touch announces user browsing in the status banner`() {
+        val activity = startActivity()
+        val now = SystemClock.uptimeMillis()
+        activity.webView.dispatchTouchEvent(
+            MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN, 100f, 100f, 0)
+        )
+        assertTrue(activity.statusView.text.contains("User browsing"))
     }
 }

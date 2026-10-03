@@ -109,7 +109,15 @@ class CommandArbiter(
         } catch (e: Exception) {
             """{"state":"failed","commandId":"${queued.commandId}","error":"${e.javaClass.simpleName}"}"""
         }
-        results.put(queued.commandId, payload)
+        // Result-commit gate: work that began under generation N must not
+        // publish after the policy advanced past N, even if cancellation
+        // raced with completion.
+        val final = if (queued.generationId != policy.generation) {
+            """{"state":"cancelled","commandId":"${queued.commandId}"}"""
+        } else {
+            payload
+        }
+        results.put(queued.commandId, final)
     }
 
     private suspend fun executeOpen(cmd: BrowserCommand.Open): String {

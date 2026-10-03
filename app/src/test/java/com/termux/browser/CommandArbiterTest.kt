@@ -1,9 +1,11 @@
 package com.termux.browser
 
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -12,6 +14,7 @@ class CommandArbiterTest {
     private class FakeHost : PageHost {
         var url: String? = null
         var evalResult: String? = null
+        var evalHook: (suspend () -> String?)? = null
         override fun loadUrl(url: String) {
             this.url = url
         }
@@ -20,7 +23,8 @@ class CommandArbiterTest {
         override fun goForward() {}
         override fun reload() {}
         override fun currentUrl(): String? = url
-        override suspend fun evalJs(script: String): String? = evalResult
+        override suspend fun evalJs(script: String): String? =
+            evalHook?.invoke() ?: evalResult
     }
 
     private fun ui(): UiRunner = object : UiRunner {
@@ -76,6 +80,94 @@ class CommandArbiterTest {
             val id = (submitted as SubmitResult.Accepted).commandId
             val stored = awaitResult(results, id)
             assertTrue(stored!!.body.contains("hello world"))
+        } finally {
+            arbiter.close()
+        }
+    }
+
+    @Test
+    fun `generation advance during read cancels the committed result`() = runBlocking {
+        val host = FakeHost()
+        val policy = ControlPolicy()
+        policy.onAutomationStart()
+        val results = ResultStore()
+        val controller = BrowserController(host, policy, ActivityLog()) {}
+        val arbiter = CommandArbiter(
+            this, ui(), host, controller, policy, results
+        )
+        try {
+            val entered = CompletableDeferred<Unit>()
+            val release = CompletableDeferred<Unit>()
+            host.evalHook = {
+                entered.complete(Unit)
+                release.await()
+                """{"text":"stale payload"}"""
+            }
+            val submitted = arbiter.submit(BrowserCommand.Read("page", 100))
+            val id = (submitted as SubmitResult.Accepted).commandId
+            withTimeout(5000) { entered.await() }
+            policy.onStop() // generation advances mid-read
+            release.complete(Unit)
+            val stored = awaitResult(results, id)
+            assertTrue(stored!!.body.contains("cancelled"))
+            assertFalse(stored.body.contains("stale payload"))
+        } finally {
+            arbiter.close()
+        }
+    }
+
+    @Test
+    fun `pause preserves queued commands until resume`() = runBlocking {
+        val host = FakeHost()
+        val policy = ControlPolicy()
+        policy.onAutomationStart()
+        policy.onPause()
+        val results = ResultStore()
+        val controller = BrowserController(host, policy, ActivityLog()) {}
+        val arbiter = CommandArbiter(
+            this, ui(), host, controller, policy, results
+        )
+        try {
+            val first = arbiter.submit(BrowserCommand.Open("https://a.example", "termux"))
+            val second = arbiter.submit(BrowserCommand.Open("https://b.example", "termux"))
+            assertTrue(first is SubmitResult.Accepted)
+            assertTrue(second is SubmitResult.Accepted)
+            assertEquals(2, arbiter.pendingCount())
+            delay(300)
+            // Nothing executed while paused; nothing lost either.
+            assertEquals(2, arbiter.pendingCount())
+            policy.onResume()
+            val one = awaitResult(results, (first as SubmitResult.Accepted).commandId)
+            val two = awaitResult(results, (second as SubmitResult.Accepted).commandId)
+            assertTrue(one!!.body.contains("completed"))
+            assertTrue(two!!.body.contains("completed"))
+            assertEquals(0, arbiter.pendingCount())
+        } finally {
+            arbiter.close()
+        }
+    }
+
+    @Test
+    fun `stop drains queued commands as cancelled`() = runBlocking {
+        val host = FakeHost()
+        val policy = ControlPolicy()
+        policy.onAutomationStart()
+        policy.onPause()
+        val results = ResultStore()
+        val controller = BrowserController(host, policy, ActivityLog()) {}
+        val arbiter = CommandArbiter(
+            this, ui(), host, controller, policy, results
+        )
+        try {
+            val first = arbiter.submit(BrowserCommand.Open("https://a.example", "termux"))
+            val second = arbiter.submit(BrowserCommand.Open("https://b.example", "termux"))
+            arbiter.stopNow("termux")
+            val one = results.get((first as SubmitResult.Accepted).commandId)
+            val two = results.get((second as SubmitResult.Accepted).commandId)
+            assertTrue(one!!.body.contains("cancelled"))
+            assertTrue(two!!.body.contains("cancelled"))
+            assertEquals(0, arbiter.pendingCount())
+            assertEquals("https://a.example", host.url ?: "https://a.example")
         } finally {
             arbiter.close()
         }

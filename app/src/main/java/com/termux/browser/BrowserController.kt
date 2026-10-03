@@ -39,7 +39,7 @@ class BrowserController(
         pendingUrl = url
         lastOpenedUrl = url
         host.loadUrl(url)
-        log.add(source, "open", url)
+        log.add(source, "open", "gen=${policy.generation} $url")
         announce("[$source] Opening $url")
         return true
     }
@@ -77,7 +77,7 @@ class BrowserController(
         activeGeneration = policy.generation
         pendingUrl = null
         lastOpenedUrl = url
-        log.add("user", "navigate", url)
+        log.add("user", "navigate", "gen=${policy.generation} $url")
         announce("[user] Navigated to $url")
     }
 
@@ -85,7 +85,7 @@ class BrowserController(
         host.stopLoading()
         policy.onStop()
         pendingUrl = null
-        log.add(source, "stop", host.currentUrl() ?: "")
+        log.add(source, "stop", "gen=${policy.generation} ${host.currentUrl() ?: ""}")
         announce("[$source] Stopped. Queued automation cleared.")
     }
 
@@ -93,15 +93,15 @@ class BrowserController(
         // Stale when the session generation moved on (takeover/stop) or the
         // finished URL is not the currently expected page.
         if (activeGeneration != policy.generation || url != lastOpenedUrl) {
-            log.add("system", "stale_callback_ignored", url)
+            log.add("system", "stale_callback_ignored", "gen=${policy.generation} $url")
             return
         }
-        log.add("system", "page_ready", url)
+        log.add("system", "page_ready", "gen=${policy.generation} $url")
         announce("Page ready: $url")
     }
 
     fun onPageError(url: String, description: String) {
-        log.add("system", "page_error", "$url :: ${description.take(200)}")
+        log.add("system", "page_error", "gen=${policy.generation} $url :: ${description.take(200)}")
         announce("Page error: $description")
     }
 }
