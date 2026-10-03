@@ -67,7 +67,7 @@ class ResponseWaiter(
     private val pollMs: Long = 500,
     private val clock: () -> Long = System::currentTimeMillis,
     private val sleeper: suspend (Long) -> Unit = { delay(it) },
-    private val cancelled: () -> Boolean = {},
+    private val cancelled: () -> Boolean = { false },
     private val exited: () -> String? = { null }
 ) {
     suspend fun await(): WaitResult {
