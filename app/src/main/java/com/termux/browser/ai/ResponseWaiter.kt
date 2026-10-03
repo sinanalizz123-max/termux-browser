@@ -45,8 +45,12 @@ object SnapshotParser {
 
     fun parse(raw: String?): Snapshot? {
         if (raw.isNullOrBlank()) return null
+        // evaluateJavascript JSON-quotes string results; strip one layer.
+        val unquoted = runCatching {
+            json.decodeFromString<String>(raw)
+        }.getOrNull() ?: raw
         return runCatching {
-            val obj = json.parseToJsonElement(raw).jsonObject
+            val obj = json.parseToJsonElement(unquoted).jsonObject
             fun bool(key: String) =
                 obj[key]?.jsonPrimitive?.content == "true"
             Snapshot(

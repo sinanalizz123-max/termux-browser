@@ -212,9 +212,7 @@ class CommandArbiter(
         // finally covers submit failure, waiter outcomes, and cancellation.
         try {
             val ackRaw = ui.run { host.evalJs(submitScript) }
-            val ack = ackRaw?.let {
-                runCatching { json.parseToJsonElement(it).jsonObject }.getOrNull()
-            }
+            val ack = parseJsObject(ackRaw)
             val submitted = ack?.get("submitted")?.jsonPrimitive?.content == "true"
             if (!submitted) return failed(ErrorCodes.ADAPTER_UNRECOGNIZED)
 
@@ -264,11 +262,22 @@ class CommandArbiter(
     private fun failed(code: String): String =
         """{"state":"failed","error":"$code"}"""
 
+    /**
+     * evaluateJavascript delivers string results JSON-quoted (outer quotes
+     * plus escaping). Strip one quoting layer before parsing, so on-device
+     * behavior matches the direct-JSON fakes used in tests.
+     */
+    private fun parseJsObject(raw: String?): kotlinx.serialization.json.JsonObject? {
+        if (raw == null) return null
+        val unquoted = runCatching {
+            json.decodeFromString<String>(raw)
+        }.getOrNull() ?: raw
+        return runCatching { json.parseToJsonElement(unquoted).jsonObject }.getOrNull()
+    }
+
     private suspend fun executeRead(cmd: BrowserCommand.Read): String {
         val raw = ui.run { host.evalJs(PageScripts.forScope(cmd.scope)) }
-        val parsed = raw?.let {
-            runCatching { json.parseToJsonElement(it).jsonObject }.getOrNull()
-        }
+        val parsed = parseJsObject(raw)
         val result = when (cmd.scope) {
             "title" -> ReadResult(
                 scope = cmd.scope,

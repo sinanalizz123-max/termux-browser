@@ -142,6 +142,17 @@ class ResponseWaiterTest {
     }
 
     @Test
+    fun `parser strips evaluateJavascript quoting`() {
+        // Real WebView delivers string results JSON-quoted with escaping.
+        val quoted =
+            "\"{\\\"messageCount\\\":1,\\\"lastText\\\":\\\"hi there\\\",\\\"promptFound\\\":true}\""
+        val parsed = SnapshotParser.parse(quoted)!!
+        assertEquals(1, parsed.messageCount)
+        assertEquals("hi there", parsed.lastText)
+        assertTrue(parsed.promptFound)
+    }
+
+    @Test
     fun `parser handles valid missing and malformed input`() {
         val full = SnapshotParser.parse(
             """{"messageCount":2,"lastText":"hi","generating":true}"""

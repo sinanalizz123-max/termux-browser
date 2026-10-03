@@ -352,6 +352,27 @@ class CommandArbiterTest {
     }
 
     @Test
+    fun `read parses real webview quoted results`() = runBlocking {
+        // On-device evaluateJavascript wraps string results in JSON quotes.
+        val host = FakeHost().apply {
+            evalResult = "\"{\\\"text\\\":\\\"hello world\\\"}\""
+        }
+        val results = ResultStore()
+        val controller = BrowserController(host, ControlPolicy(), ActivityLog(), announce = {})
+        val arbiter = CommandArbiter(
+            this, ui(), host, controller, ControlPolicy(), results
+        )
+        try {
+            val submitted = arbiter.submit(BrowserCommand.Read("page", 100))
+            val id = (submitted as SubmitResult.Accepted).commandId
+            val stored = awaitResult(results, id)
+            assertTrue(stored!!.body.contains("hello world"))
+        } finally {
+            arbiter.close()
+        }
+    }
+
+    @Test
     fun `full queue answers queue-full`() = runBlocking {
         val host = FakeHost()
         val policy = ControlPolicy()
