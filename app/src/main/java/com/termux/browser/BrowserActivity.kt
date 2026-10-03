@@ -386,9 +386,9 @@ class BrowserActivity : Activity(), PageHost {
 
     internal fun toggleMenu() {
         if (drawerLayout.isDrawerOpen(android.view.Gravity.START)) {
-            drawerLayout.closeDrawer(android.view.Gravity.START)
+            drawerLayout.closeDrawer(android.view.Gravity.START, false)
         } else {
-            drawerLayout.openDrawer(android.view.Gravity.START)
+            drawerLayout.openDrawer(android.view.Gravity.START, false)
         }
     }
 
