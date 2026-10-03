@@ -88,6 +88,19 @@ data class AiChatRequest(
 )
 
 @Serializable
+data class DebugReport(
+    val envelope: Envelope? = null,
+    val uptimeMs: Long = 0,
+    val pendingCommands: Int = 0,
+    val controlState: String = "UNKNOWN",
+    val generationId: Int = 0,
+    val webViewVersion: String = "unknown",
+    val heapUsedMb: Long = 0,
+    val heapMaxMb: Long = 0,
+    val lastCrash: String? = null
+)
+
+@Serializable
 data class ReadResult(
     val scope: String,
     val text: String? = null,

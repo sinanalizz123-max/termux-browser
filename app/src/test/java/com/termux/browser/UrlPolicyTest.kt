@@ -50,4 +50,18 @@ class UrlPolicyTest {
     fun `blank input is rejected`() {
         assertNull(UrlPolicy.normalize("   "))
     }
+
+    @Test
+    fun `display form strips tokens and caps length`() {
+        assertEquals(
+            "https://accounts.google.com/v3/signin/identifier",
+            UrlPolicy.forDisplay("https://accounts.google.com/v3/signin/identifier?opparams=secret&state=xyz#frag")
+        )
+        assertEquals("", UrlPolicy.forDisplay(null))
+        assertEquals("", UrlPolicy.forDisplay("   "))
+        val long = "https://example.com/" + "p".repeat(500)
+        val shown = UrlPolicy.forDisplay(long)
+        assertTrue(shown.length <= 161)
+        assertFalse(shown.contains("p".repeat(161)))
+    }
 }

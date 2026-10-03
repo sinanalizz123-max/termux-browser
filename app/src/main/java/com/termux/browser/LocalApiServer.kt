@@ -65,6 +65,8 @@ class LocalApiServer(
     private val results: ResultStore,
     private val statusProvider: suspend () -> StatusBody,
     private val bus: EventBus = EventBus(),
+    private val debugLog: ActivityLog = ActivityLog(),
+    private val reportProvider: suspend () -> DebugReport = { DebugReport() },
     private val json: Json = Json { ignoreUnknownKeys = true; explicitNulls = false }
 ) {
     private var engine: EmbeddedServer<*, *>? = null
@@ -109,6 +111,8 @@ class LocalApiServer(
                     post("/control/resume") { handleResume() }
                     post("/control/stop") { handleControlStop() }
                     webSocket("/events") { handleEvents() }
+                    get("/debug/console") { handleDebugConsole() }
+                    get("/debug/report") { handleDebugReport() }
                 }
             }
             }
@@ -380,6 +384,30 @@ class LocalApiServer(
             """{"envelope":${json.encodeToString(envelope())},"state":"${policy.state.name}"}""",
             ContentType.Application.Json
         )
+    }
+
+    /**
+     * Debug mode: JS console messages plus crash records, newest-first
+     * replay like /v1/activity. Same bearer auth as every other route.
+     */
+    private suspend fun RoutingContext.handleDebugConsole() {
+        if (!authorized()) return
+        val since = call.request.queryParameters["since"]?.toLongOrNull() ?: 0L
+        val events = debugLog.since(since)
+        val items = events.joinToString(",") {
+            """{"id":${it.id},"timestamp":${it.timestamp},"source":${json.encodeToString(it.source)},"action":${json.encodeToString(it.action)},"detail":${json.encodeToString(it.detail)}}"""
+        }
+        call.respondText(
+            """{"envelope":${json.encodeToString(envelope())},"events":[$items]}""",
+            ContentType.Application.Json
+        )
+    }
+
+    private suspend fun RoutingContext.handleDebugReport() {
+        if (!authorized()) return
+        val report = ui.run { reportProvider() }
+        val body = report.copy(envelope = envelope())
+        call.respondText(json.encodeToString(body), ContentType.Application.Json)
     }
 
     /**

@@ -51,6 +51,14 @@ route, including WebSocket upgrade, requires the bearer token.
   explicit resume. Resume is always explicit, never automatic.
 - `STOPPED`: current op cancelled, queued automation cleared, generation++.
 
+## Debug mode
+
+Same bearer auth as everything else. No logcat, no special permission:
+- `GET /v1/debug/console?since=` — JS console messages + crash records.
+- `GET /v1/debug/report` — uptime, queue depth, control state, WebView
+  version, heap use, last crash summary.
+- `browserctl debug console|report` wraps both.
+
 ## Event stream (M5)
 
 - `WS /v1/events?since=N`, Bearer-authenticated, localhost only.

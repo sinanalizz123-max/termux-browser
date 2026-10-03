@@ -298,12 +298,25 @@ class LocalApiServerTest {
             "POST" to "/commands/api-chat",
             "POST" to "/control/pause",
             "POST" to "/control/resume",
-            "POST" to "/control/stop"
+            "POST" to "/control/stop",
+            "GET" to "/debug/console",
+            "GET" to "/debug/report"
         )
         for ((method, path) in routes) {
             val code = codeOf(method, path, if (method == "POST") "{}" else null)
             assertEquals("unauthenticated $method $path must be 401", 401, code)
         }
+    }
+
+    @Test
+    fun `debug console and report answer when authorized`() {
+        val (consoleCode, consoleBody) = get("/debug/console", hex)
+        assertEquals(200, consoleCode)
+        assertTrue(consoleBody.contains("\"events\""))
+        val (reportCode, reportBody) = get("/debug/report", hex)
+        assertEquals(200, reportCode)
+        assertTrue(reportBody.contains("uptimeMs"))
+        assertTrue(reportBody.contains("heapUsedMb"))
     }
 
     @Test

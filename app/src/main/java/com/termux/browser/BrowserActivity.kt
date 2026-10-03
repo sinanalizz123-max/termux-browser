@@ -58,6 +58,9 @@ class BrowserActivity : Activity(), PageHost {
     private val policy = ControlPolicy()
     private val log = ActivityLog()
     private val bus = EventBus()
+    private val debugLog = ActivityLog(maxEvents = 200, maxBytes = 128 * 1024)
+    private val startTime = System.currentTimeMillis()
+    private val lastCrash = java.util.concurrent.atomic.AtomicReference<String?>(null)
     private val fgs = ForegroundController()
     private lateinit var notifier: SessionNotifier
     private var fgsRunning = false
@@ -310,10 +313,19 @@ class BrowserActivity : Activity(), PageHost {
         )
         apiToken = TokenStore(filesDir, tokenCryptoOverride ?: KeystoreTokenCrypto())
             .getOrCreate()
+        val previousCrashHandler = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, error ->
+            val summary = "${error.javaClass.name}: ${(error.message ?: "").take(200)}"
+            lastCrash.set(summary)
+            debugLog.add("crash", error.javaClass.name, "${thread.name}: ${summary.take(200)}")
+            previousCrashHandler?.uncaughtException(thread, error)
+        }
         val api = LocalApiServer(
             apiToken, uiRunner, arbiter, policy, log, results,
             statusProvider = { currentStatus() },
-            bus = bus
+            bus = bus,
+            debugLog = debugLog,
+            reportProvider = { currentReport() }
         )
         server = api
         activityScope.launch {
@@ -497,9 +509,27 @@ class BrowserActivity : Activity(), PageHost {
         dialog.show()
     }
 
+    private fun currentReport(): DebugReport {
+        val runtime = Runtime.getRuntime()
+        val usedMb = (runtime.totalMemory() - runtime.freeMemory()) / (1024 * 1024)
+        val maxMb = runtime.maxMemory() / (1024 * 1024)
+        return DebugReport(
+            uptimeMs = System.currentTimeMillis() - startTime,
+            pendingCommands = arbiter.pendingCount(),
+            controlState = policy.state.name,
+            generationId = policy.generation,
+            webViewVersion = webViewVersion,
+            heapUsedMb = usedMb,
+            heapMaxMb = maxMb,
+            lastCrash = lastCrash.get()
+        )
+    }
+
     private fun currentStatus(): StatusBody = StatusBody(
         state = policy.state.name,
-        url = webView.url,
+        // Display form only: OAuth/session tokens in query strings must
+        // never cross the API. Internal logic keeps using the full URL.
+        url = UrlPolicy.forDisplay(webView.url).ifEmpty { null },
         title = webView.title,
         loading = pageLoading,
         generationId = policy.generation,
@@ -685,6 +715,15 @@ class BrowserActivity : Activity(), PageHost {
                 progressBar.visibility =
                     if (newProgress >= 100) android.view.View.GONE
                     else android.view.View.VISIBLE
+            }
+
+            override fun onConsoleMessage(message: android.webkit.ConsoleMessage): Boolean {
+                debugLog.add(
+                    "console",
+                    message.messageLevel().name,
+                    "${message.sourceId()}:${message.lineNumber()}: ${message.message().take(500)}"
+                )
+                return super.onConsoleMessage(message)
             }
         }
     }
