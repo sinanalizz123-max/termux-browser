@@ -42,6 +42,7 @@ class CommandArbiter(
     private val controller: BrowserController,
     private val policy: ControlPolicy,
     private val results: ResultStore,
+    private val bus: EventBus = EventBus(),
     private val json: Json = Json { ignoreUnknownKeys = true }
 ) {
     data class QueuedCommand(
@@ -68,6 +69,7 @@ class CommandArbiter(
         val queued = QueuedCommand(id, policy.generation, command)
         if (!channel.trySend(queued).isSuccess) return SubmitResult.QueueFull
         pending.incrementAndGet()
+        bus.publish(EventTypes.COMMAND_QUEUED, commandId = id, state = "queued")
         return SubmitResult.Accepted(id, queued.generationId)
     }
 
@@ -82,6 +84,7 @@ class CommandArbiter(
                 queued.commandId,
                 """{"state":"cancelled","commandId":"${queued.commandId}"}"""
             )
+            bus.publish(EventTypes.COMMAND_CANCELLED, commandId = queued.commandId)
             pending.decrementAndGet()
             drained = channel.tryReceive()
         }
@@ -100,6 +103,7 @@ class CommandArbiter(
         ) {
             delay(100)
         }
+        bus.publish(EventTypes.COMMAND_STARTED, commandId = queued.commandId)
         val payload = try {
             when (val cmd = queued.command) {
                 is BrowserCommand.Open -> executeOpen(cmd)
@@ -112,12 +116,18 @@ class CommandArbiter(
         // Result-commit gate: work that began under generation N must not
         // publish after the policy advanced past N, even if cancellation
         // raced with completion.
-        val final = if (queued.generationId != policy.generation) {
-            """{"state":"cancelled","commandId":"${queued.commandId}"}"""
+        val (final, doneType) = if (queued.generationId != policy.generation) {
+            Pair(
+                """{"state":"cancelled","commandId":"${queued.commandId}"}""",
+                EventTypes.COMMAND_CANCELLED
+            )
+        } else if (payload.contains("\"state\":\"failed\"")) {
+            Pair(payload, EventTypes.COMMAND_FAILED)
         } else {
-            payload
+            Pair(payload, EventTypes.COMMAND_COMPLETED)
         }
         results.put(queued.commandId, final)
+        bus.publish(doneType, commandId = queued.commandId)
     }
 
     private suspend fun executeOpen(cmd: BrowserCommand.Open): String {

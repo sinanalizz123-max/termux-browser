@@ -1,10 +1,18 @@
 package com.termux.browser
 
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.cio.CIO
+import io.ktor.client.plugins.websocket.webSocket
+import io.ktor.client.plugins.websocket.WebSockets
+import io.ktor.http.header
+import io.ktor.websocket.Frame
+import io.ktor.websocket.readText
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -126,6 +134,58 @@ class LocalApiServerTest {
         }
         assertTrue(result.contains("completed"))
         assertTrue(result.contains("example.com"))
+    }
+
+    @Test
+    fun `websocket rejects missing token`() {
+        val socket = java.net.Socket("127.0.0.1", port)
+        socket.soTimeout = 10000
+        try {
+            val out = socket.getOutputStream()
+            out.write(
+                ("GET /v1/events HTTP/1.1\r\nHost: 127.0.0.1:$port\r\n" +
+                    "Upgrade: websocket\r\nConnection: Upgrade\r\n" +
+                    "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n" +
+                    "Sec-WebSocket-Version: 13\r\n\r\n").toByteArray()
+            )
+            out.flush()
+            val statusLine = socket.getInputStream().bufferedReader().readLine() ?: ""
+            assertTrue(statusLine.contains("401"))
+        } finally {
+            socket.close()
+        }
+    }
+
+    @Test
+    fun `websocket streams command lifecycle`() = runBlocking {
+        val client = HttpClient(CIO) { install(WebSockets) }
+        try {
+            withTimeout(20000) {
+                client.webSocket(
+                    host = "127.0.0.1",
+                    port = port,
+                    path = "/v1/events?since=0",
+                    request = { header("Authorization", "Bearer $hex") }
+                ) {
+                    val (_, _) = post(
+                        "/commands/open", hex, """{"url":"https://example.com"}"""
+                    )
+                    val seen = mutableSetOf<String>()
+                    val want = setOf("command.queued", "command.started", "command.completed")
+                    while (!seen.containsAll(want)) {
+                        val frame = incoming.receive()
+                        if (frame is Frame.Text) {
+                            Regex("\"type\":\"([^\"]+)\"")
+                                .find(frame.readText())
+                                ?.groupValues?.get(1)?.let { seen.add(it) }
+                        }
+                    }
+                    assertTrue(seen.containsAll(want))
+                }
+            }
+        } finally {
+            client.close()
+        }
     }
 
     @Test

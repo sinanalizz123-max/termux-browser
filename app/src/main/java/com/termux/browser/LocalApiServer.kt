@@ -16,6 +16,13 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.route
 import io.ktor.server.routing.routing
+import io.ktor.server.websocket.DefaultWebSocketServerSession
+import io.ktor.server.websocket.WebSockets
+import io.ktor.server.websocket.webSocket
+import io.ktor.websocket.CloseReason
+import io.ktor.websocket.Frame
+import io.ktor.websocket.close
+import io.ktor.websocket.readText
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.util.UUID
@@ -57,6 +64,7 @@ class LocalApiServer(
     private val log: ActivityLog,
     private val results: ResultStore,
     private val statusProvider: suspend () -> StatusBody,
+    private val bus: EventBus = EventBus(),
     private val json: Json = Json { ignoreUnknownKeys = true; explicitNulls = false }
 ) {
     private var engine: EmbeddedServer<*, *>? = null
@@ -72,6 +80,7 @@ class LocalApiServer(
             port = 0,
             module = {
                 install(ContentNegotiation) { json(json) }
+                install(WebSockets)
                 routing {
                     route("/v1") {
                         get("/status") { handleStatus() }
@@ -85,11 +94,12 @@ class LocalApiServer(
                         post("/commands/stop") { handleStopCommand() }
                         post("/commands/read") { handleRead() }
                         post("/commands/ai-chat") { handleNotImplemented() }
-                        post("/control/pause") { handlePause() }
-                        post("/control/resume") { handleResume() }
-                        post("/control/stop") { handleControlStop() }
-                    }
+                    post("/control/pause") { handlePause() }
+                    post("/control/resume") { handleResume() }
+                    post("/control/stop") { handleControlStop() }
+                    webSocket("/events") { handleEvents() }
                 }
+            }
             }
         ).start(wait = false)
         engine = server
@@ -300,6 +310,7 @@ class LocalApiServer(
         if (!authorized()) return
         policy.onPause()
         log.add("termux", "pause", "")
+        bus.publish(EventTypes.AUTOMATION_PAUSED, state = policy.state.name)
         call.respondText(
             """{"envelope":${json.encodeToString(envelope())},"state":"${policy.state.name}"}""",
             ContentType.Application.Json
@@ -310,6 +321,7 @@ class LocalApiServer(
         if (!authorized()) return
         policy.onResume()
         log.add("termux", "resume", "")
+        bus.publish(EventTypes.AUTOMATION_RESUMED, state = policy.state.name)
         call.respondText(
             """{"envelope":${json.encodeToString(envelope())},"state":"${policy.state.name}"}""",
             ContentType.Application.Json
@@ -323,5 +335,26 @@ class LocalApiServer(
             """{"envelope":${json.encodeToString(envelope())},"state":"${policy.state.name}"}""",
             ContentType.Application.Json
         )
+    }
+
+    /**
+     * Live event stream. Bearer-authenticated like every other route; no
+     * unauthenticated path. Replay-then-live with gap semantics comes from
+     * EventBus.stream; per-connection slow sends are dropped, never blocking.
+     */
+    private suspend fun DefaultWebSocketServerSession.handleEvents() {
+        val auth = call.request.header("Authorization")
+        if (!RequestValidator.checkBearer(auth, token)) {
+            close(CloseReason(4401, "bearer required"))
+            return
+        }
+        val since = call.request.queryParameters["since"]?.toLongOrNull() ?: 0L
+        try {
+            bus.stream(since) { event ->
+                outgoing.trySend(Frame.Text(json.encodeToString(event)))
+                Unit
+            }
+        } catch (_: Exception) {
+        }
     }
 }

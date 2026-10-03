@@ -38,6 +38,19 @@ WebSocket event stream. Token in `Authorization: Bearer`, never in URLs.
   explicit resume. Resume is always explicit, never automatic.
 - `STOPPED`: current op cancelled, queued automation cleared, generation++.
 
+## Event stream (M5)
+
+- `WS /v1/events?since=N`, Bearer-authenticated, localhost only.
+- Typed events with monotonic `eventId`: command queued/started/completed/
+  failed/cancelled, automation paused/resumed/stopped, user takeover,
+  browser url/title/loading/error.
+- Replay-then-live: IDs strictly greater than N, then live delivery with no
+  gap or duplicate. N older than retained history yields an explicit
+  `history_gap` event; the client resynchronizes.
+- Bounded history (300 events / 256 KB); slow consumers drop oldest and
+  never block publishers or command execution.
+- `GET /v1/activity` remains independent of the stream.
+
 ## Command queue and results (M2)
 
 - Queue is bounded (16 commands). A full queue answers `QUEUE_FULL`

@@ -140,17 +140,109 @@ def cmd_stop_cmd(_args):
     print(json.dumps(body, indent=2))
 
 
+def ws_connect(host, port, path, token):
+    """Minimal stdlib WebSocket client (hybi-13). No third-party deps."""
+    import base64
+    import hashlib
+    import socket
+    import struct
+    s = socket.create_connection((host, port), timeout=10)
+    key = base64.b64encode(os.urandom(16)).decode()
+    s.sendall(
+        (f"GET {path} HTTP/1.1\r\nHost: {host}:{port}\r\n"
+         "Upgrade: websocket\r\nConnection: Upgrade\r\n"
+         f"Sec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n"
+         f"Authorization: Bearer {token}\r\n\r\n").encode()
+    )
+    head = b""
+    while b"\r\n\r\n" not in head:
+        chunk = s.recv(4096)
+        if not chunk:
+            raise ConnectionError("handshake closed")
+        head += chunk
+    status = head.split(b"\r\n", 1)[0].decode()
+    if " 101 " not in status:
+        raise ConnectionError(f"handshake failed: {status}")
+    return s
+
+
+def ws_recv_text(s):
+    """Read one message; answers pings, raises on close/error."""
+    import socket
+    import struct
+    buf = b""
+
+    def read(n):
+        nonlocal buf
+        while len(buf) < n:
+            chunk = s.recv(max(n - len(buf), 1))
+            if not chunk:
+                raise ConnectionError("socket closed")
+            buf += chunk
+        out, buf = buf[:n], buf[n:]
+        return out
+
+    message = b""
+    while True:
+        b1, b2 = read(2)
+        fin = b1 & 0x80
+        opcode = b1 & 0x0F
+        length = b2 & 0x7F
+        if length == 126:
+            length = struct.unpack(">H", read(2))[0]
+        elif length == 127:
+            length = struct.unpack(">Q", read(8))[0]
+        payload = read(length)
+        if opcode == 0x8:
+            raise ConnectionError("server closed stream")
+        if opcode == 0x9:
+            masked = os.urandom(4)
+            frame = bytes([0x8A, 0x80 | len(payload)])
+            frame += masked + bytes(c ^ masked[i % 4] for i, c in enumerate(payload))
+            s.sendall(frame)
+            continue
+        if opcode in (0x1, 0x0, 0x2):
+            message += payload
+            if fin:
+                return message.decode("utf-8", "replace")
+
+
 def cmd_watch(_args):
-    since = 0
+    import json as _json
+    host, port, token = load_config()
     try:
-        while True:
-            code, body = api("GET", f"/activity?since={since}")
-            for e in body.get("events", []):
-                since = max(since, e.get("id", since))
-                print(f"[{e.get('source')}] {e.get('action')}: {e.get('detail', '')[:160]}")
-            time.sleep(2)
-    except KeyboardInterrupt:
-        pass
+        with open(os.path.expanduser("~/.config/termux-browser/last-event")) as f:
+            since = int(f.read().strip() or 0)
+    except (OSError, ValueError):
+        since = 0
+    backoff, last_saved = 1, since
+    while True:
+        try:
+            s = ws_connect(host, port, f"/v1/events?since={since}", token)
+            backoff = 1
+            while True:
+                body = _json.loads(ws_recv_text(s))
+                if body.get("type") == "history_gap":
+                    print("history gap: resynchronizing from status", file=sys.stderr)
+                    since = 0
+                    break
+                eid = body.get("eventId", since)
+                print(f"[{body.get('type')}] {body.get('commandId', '')} "
+                      f"{body.get('state', '')} {body.get('detail', '')[:160]}")
+                since = max(since, eid)
+                if since != last_saved:
+                    with open(os.path.expanduser("~/.config/termux-browser/last-event"),
+                              "w") as f:
+                        f.write(str(since))
+                    os.chmod(os.path.expanduser("~/.config/termux-browser/last-event"),
+                             0o600)
+                    last_saved = since
+        except KeyboardInterrupt:
+            return
+        except Exception as e:
+            print(f"watch disconnected ({e}); retrying in {backoff}s", file=sys.stderr)
+            time.sleep(backoff)
+            backoff = min(backoff * 2, 30)
 
 
 COMMANDS = {

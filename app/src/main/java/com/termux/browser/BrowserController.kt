@@ -22,7 +22,8 @@ class BrowserController(
     private val host: PageHost,
     private val policy: ControlPolicy,
     private val log: ActivityLog,
-    private val announce: (String) -> Unit
+    private val announce: (String) -> Unit,
+    private val bus: EventBus = EventBus()
 ) {
     private var activeGeneration: Int = policy.generation
     private var pendingUrl: String? = null
@@ -40,6 +41,7 @@ class BrowserController(
         lastOpenedUrl = url
         host.loadUrl(url)
         log.add(source, "open", "gen=${policy.generation} $url")
+        bus.publish(EventTypes.BROWSER_URL_CHANGED, detail = url)
         announce("[$source] Opening $url")
         return true
     }
@@ -73,11 +75,16 @@ class BrowserController(
     }
 
     fun userNavigated(url: String) {
+        val before = policy.generation
         policy.onUserNavigation()
         activeGeneration = policy.generation
         pendingUrl = null
         lastOpenedUrl = url
         log.add("user", "navigate", "gen=${policy.generation} $url")
+        if (policy.generation != before) {
+            bus.publish(EventTypes.USER_TAKEOVER, detail = url)
+        }
+        bus.publish(EventTypes.BROWSER_URL_CHANGED, detail = url)
         announce("[user] Navigated to $url")
     }
 
@@ -86,7 +93,12 @@ class BrowserController(
         policy.onStop()
         pendingUrl = null
         log.add(source, "stop", "gen=${policy.generation} ${host.currentUrl() ?: ""}")
+        bus.publish(EventTypes.AUTOMATION_STOPPED)
         announce("[$source] Stopped. Queued automation cleared.")
+    }
+
+    fun onPageStarted(url: String) {
+        bus.publish(EventTypes.BROWSER_LOADING_STARTED, detail = url)
     }
 
     fun onPageFinished(url: String) {
@@ -97,11 +109,13 @@ class BrowserController(
             return
         }
         log.add("system", "page_ready", "gen=${policy.generation} $url")
+        bus.publish(EventTypes.BROWSER_LOADING_FINISHED, detail = url)
         announce("Page ready: $url")
     }
 
     fun onPageError(url: String, description: String) {
         log.add("system", "page_error", "gen=${policy.generation} $url :: ${description.take(200)}")
+        bus.publish(EventTypes.BROWSER_ERROR, detail = "$url :: ${description.take(200)}")
         announce("Page error: $description")
     }
 }

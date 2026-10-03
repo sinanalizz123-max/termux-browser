@@ -39,6 +39,7 @@ class BrowserActivity : Activity(), PageHost {
     private lateinit var logView: TextView
     private val policy = ControlPolicy()
     private val log = ActivityLog()
+    private val bus = EventBus()
     private val activityScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val uiRunner = object : UiRunner {
         override suspend fun <T> run(block: suspend () -> T): T =
@@ -117,7 +118,7 @@ class BrowserActivity : Activity(), PageHost {
         )
         setContentView(root)
 
-        controller = BrowserController(this, policy, log) { message ->
+        controller = BrowserController(this, policy, log, bus = bus) { message ->
             runOnUiThread {
                 statusView.text = message
                 refreshLog()
@@ -147,12 +148,13 @@ class BrowserActivity : Activity(), PageHost {
         webViewVersion = runCatching {
             WebViewCompat.getCurrentWebViewPackage(this)?.versionName ?: "unknown"
         }.getOrDefault("unknown")
-        arbiter = CommandArbiter(activityScope, uiRunner, this, controller, policy, results)
+        arbiter = CommandArbiter(activityScope, uiRunner, this, controller, policy, results, bus)
         apiToken = TokenStore(filesDir, tokenCryptoOverride ?: KeystoreTokenCrypto())
             .getOrCreate()
         val api = LocalApiServer(
             apiToken, uiRunner, arbiter, policy, log, results,
-            statusProvider = { currentStatus() }
+            statusProvider = { currentStatus() },
+            bus = bus
         )
         server = api
         activityScope.launch { runCatching { api.start() } }
@@ -283,6 +285,7 @@ class BrowserActivity : Activity(), PageHost {
         webView.webViewClient = object : WebViewClient() {
             override fun onPageStarted(view: WebView, url: String, favicon: android.graphics.Bitmap?) {
                 pageLoading = true
+                controller.onPageStarted(url)
             }            override fun shouldOverrideUrlLoading(
                 view: WebView,
                 request: WebResourceRequest
