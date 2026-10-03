@@ -64,7 +64,7 @@ class AiChatArbiterTest {
         }
         return CommandArbiter(
             scope, ui, host, controller, policy, results,
-            AdapterRegistry(listOf(ChatGPTAdapter(), GenericAdapter()))
+            registry = AdapterRegistry(listOf(ChatGPTAdapter(), GenericAdapter()))
         )
     }
 
@@ -205,7 +205,7 @@ class AiChatArbiterTest {
         }
         val arbiter = CommandArbiter(
             this, ui, host, controller, policy, results,
-            AdapterRegistry(listOf(ChatGPTAdapter(), GenericAdapter()))
+            registry = AdapterRegistry(listOf(ChatGPTAdapter(), GenericAdapter()))
         )
         try {
             val submitted = arbiter.submit(
