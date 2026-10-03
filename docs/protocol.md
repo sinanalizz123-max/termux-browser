@@ -1,7 +1,12 @@
 # Termux Browser protocol v1 (M0)
 
-All control traffic is JSON over `127.0.0.1` on an ephemeral port, plus one
-WebSocket event stream. Token in `Authorization: Bearer`, never in URLs.
+All control traffic is JSON over `127.0.0.1` on the fixed pair-once port
+8765, plus one WebSocket event stream. Token in `Authorization: Bearer`,
+never in URLs.
+
+Pair-once model: the port never changes and the bearer token persists in
+app storage, so Termux pairs a single time. If the app is killed, just
+reopen it — no re-pairing. Ephemeral ports are used only in tests.
 
 ## Envelope
 

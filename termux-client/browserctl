@@ -53,7 +53,7 @@ def api(method, path, body=None):
 def cmd_connect(_args):
     print("Pair with the app: open Termux Browser, tap 'Pair Termux'.")
     host = input("Host [127.0.0.1]: ").strip() or "127.0.0.1"
-    port = input("Port: ").strip()
+    port = input("Port [8765]: ").strip() or "8765"
     token = getpass.getpass("Token (paste once, not echoed): ").strip()
     if not port.isdigit() or not token:
         print("connect aborted: need a numeric port and a token.", file=sys.stderr)

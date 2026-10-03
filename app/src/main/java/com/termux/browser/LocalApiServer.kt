@@ -71,13 +71,23 @@ class LocalApiServer(
     var port: Int = -1
         private set
 
+    companion object {
+        /** Stable pair-once port. Localhost only; the token is the auth. */
+        const val FIXED_PORT = 8765
+    }
+
     private val commandLimiter = RateLimiter(max = 60, windowMs = 60_000)
 
-    suspend fun start(): Int {
+    /**
+     * Pair-once model: the server always binds the same fixed localhost
+     * port, and the bearer token persists in app storage. Termux pairs a
+     * single time; app restarts never require re-pairing — just reopen.
+     */
+    suspend fun start(preferredPort: Int = FIXED_PORT): Int {
         val server = embeddedServer(
             factory = CIO,
             host = "127.0.0.1",
-            port = 0,
+            port = preferredPort,
             module = {
                 install(ContentNegotiation) { json(json) }
                 install(WebSockets)

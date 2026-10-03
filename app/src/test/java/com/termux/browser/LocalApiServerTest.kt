@@ -78,7 +78,8 @@ class LocalApiServerTest {
             statusProvider = { StatusBody(state = policy.state.name) },
             bus = bus
         )
-        port = runBlocking { server.start() }
+        // Ephemeral port in tests; production uses the fixed pair-once port.
+        port = runBlocking { server.start(0) }
     }
 
     @After

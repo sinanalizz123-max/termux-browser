@@ -206,7 +206,12 @@ class BrowserActivity : Activity(), PageHost {
             bus = bus
         )
         server = api
-        activityScope.launch { runCatching { api.start() } }
+        activityScope.launch {
+            val started = runCatching { api.start() }
+            if (started.isFailure) {
+                announce("Termux control unavailable: localhost port busy.")
+            }
+        }
         wireControlPlane()
         if (savedInstanceState != null) {
             policy.restore(
