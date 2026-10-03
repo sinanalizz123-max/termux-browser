@@ -72,7 +72,7 @@ class ResponseWaiter(
     private val clock: () -> Long = System::currentTimeMillis,
     private val sleeper: suspend (Long) -> Unit = { delay(it) },
     private val cancelled: () -> Boolean = { false },
-    private val exited: () -> String? = { null }
+    private val exited: suspend () -> String? = { null }
 ) {
     suspend fun await(): WaitResult {
         val start = clock()
