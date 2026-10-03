@@ -68,7 +68,7 @@ class LocalApiServerTest {
         // One shared bus: publishers and the stream must observe the same bus.
         val bus = EventBus()
         val controller = BrowserController(host, policy, log, announce = {}, bus = bus)
-        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
         val ui = object : UiRunner {
             override suspend fun <T> run(block: suspend () -> T): T = block()
         }
