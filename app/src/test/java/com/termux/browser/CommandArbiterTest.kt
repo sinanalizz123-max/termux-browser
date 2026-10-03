@@ -50,7 +50,7 @@ class CommandArbiterTest {
         val host = FakeHost()
         val policy = ControlPolicy()
         val results = ResultStore()
-        val controller = BrowserController(host, policy, ActivityLog()) {}
+        val controller = BrowserController(host, policy, ActivityLog(), announce = {})
         val arbiter = CommandArbiter(
             this, ui(), host, controller, policy, results
         )
@@ -71,7 +71,7 @@ class CommandArbiterTest {
         val host = FakeHost().apply { evalResult = """{"text":"hello world"}""" }
         val policy = ControlPolicy()
         val results = ResultStore()
-        val controller = BrowserController(host, policy, ActivityLog()) {}
+        val controller = BrowserController(host, policy, ActivityLog(), announce = {})
         val arbiter = CommandArbiter(
             this, ui(), host, controller, policy, results
         )
@@ -91,7 +91,7 @@ class CommandArbiterTest {
         val policy = ControlPolicy()
         policy.onAutomationStart()
         val results = ResultStore()
-        val controller = BrowserController(host, policy, ActivityLog()) {}
+        val controller = BrowserController(host, policy, ActivityLog(), announce = {})
         val arbiter = CommandArbiter(
             this, ui(), host, controller, policy, results
         )
@@ -123,7 +123,7 @@ class CommandArbiterTest {
         policy.onAutomationStart()
         policy.onPause()
         val results = ResultStore()
-        val controller = BrowserController(host, policy, ActivityLog()) {}
+        val controller = BrowserController(host, policy, ActivityLog(), announce = {})
         val arbiter = CommandArbiter(
             this, ui(), host, controller, policy, results
         )
@@ -154,7 +154,7 @@ class CommandArbiterTest {
         policy.onAutomationStart()
         policy.onPause()
         val results = ResultStore()
-        val controller = BrowserController(host, policy, ActivityLog()) {}
+        val controller = BrowserController(host, policy, ActivityLog(), announce = {})
         val arbiter = CommandArbiter(
             this, ui(), host, controller, policy, results
         )
@@ -177,7 +177,7 @@ class CommandArbiterTest {
     fun `main_content parses like page text`() = runBlocking {
         val host = FakeHost().apply { evalResult = """{"text":"article body"}""" }
         val results = ResultStore()
-        val controller = BrowserController(host, ControlPolicy(), ActivityLog()) {}
+        val controller = BrowserController(host, ControlPolicy(), ActivityLog(), announce = {})
         val arbiter = CommandArbiter(
             this, ui(), host, controller, ControlPolicy(), results
         )
@@ -195,7 +195,7 @@ class CommandArbiterTest {
     fun `empty null and malformed extraction never crashes`() = runBlocking {
         val host = FakeHost()
         val results = ResultStore()
-        val controller = BrowserController(host, ControlPolicy(), ActivityLog()) {}
+        val controller = BrowserController(host, ControlPolicy(), ActivityLog(), announce = {})
         val arbiter = CommandArbiter(
             this, ui(), host, controller, ControlPolicy(), results
         )
@@ -218,7 +218,7 @@ class CommandArbiterTest {
             evalResult = """{"text":"""" + "x".repeat(100000) + """"}"""
         }
         val results = ResultStore()
-        val controller = BrowserController(host, ControlPolicy(), ActivityLog()) {}
+        val controller = BrowserController(host, ControlPolicy(), ActivityLog(), announce = {})
         val arbiter = CommandArbiter(
             this, ui(), host, controller, ControlPolicy(), results
         )
@@ -245,7 +245,7 @@ class CommandArbiterTest {
         }
         val host = FakeHost().apply { evalResult = raw }
         val results = ResultStore()
-        val controller = BrowserController(host, ControlPolicy(), ActivityLog()) {}
+        val controller = BrowserController(host, ControlPolicy(), ActivityLog(), announce = {})
         val arbiter = CommandArbiter(
             this, ui(), host, controller, ControlPolicy(), results
         )
@@ -266,7 +266,7 @@ class CommandArbiterTest {
             """","visible":true}]}"""
         val host = FakeHost().apply { evalResult = raw }
         val results = ResultStore()
-        val controller = BrowserController(host, ControlPolicy(), ActivityLog()) {}
+        val controller = BrowserController(host, ControlPolicy(), ActivityLog(), announce = {})
         val arbiter = CommandArbiter(
             this, ui(), host, controller, ControlPolicy(), results
         )
@@ -289,7 +289,7 @@ class CommandArbiterTest {
         policy.onAutomationStart()
         policy.onPause() // worker gate blocks; nothing is consumed
         val results = ResultStore()
-        val controller = BrowserController(host, policy, ActivityLog()) {}
+        val controller = BrowserController(host, policy, ActivityLog(), announce = {})
         val arbiter = CommandArbiter(
             this, ui(), host, controller, policy, results
         )
