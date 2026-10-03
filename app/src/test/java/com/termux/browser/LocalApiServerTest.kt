@@ -64,7 +64,7 @@ class LocalApiServerTest {
         val log = ActivityLog()
         val results = ResultStore()
         val host = FakeHost()
-        val controller = BrowserController(host, policy, log) {}
+        val controller = BrowserController(host, policy, log, announce = {})
         scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
         val ui = object : UiRunner {
             override suspend fun <T> run(block: suspend () -> T): T = block()
