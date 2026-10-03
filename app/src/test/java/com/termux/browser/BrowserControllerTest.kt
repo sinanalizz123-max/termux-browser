@@ -9,6 +9,7 @@ class BrowserControllerTest {
     private class FakeHost : PageHost {
         var url: String? = null
         var stopped = false
+        var evalResult: String? = null
         override fun loadUrl(url: String) {
             this.url = url
         }
@@ -19,6 +20,7 @@ class BrowserControllerTest {
         override fun goForward() {}
         override fun reload() {}
         override fun currentUrl(): String? = url
+        override suspend fun evalJs(script: String): String? = evalResult
     }
 
     private fun controller(

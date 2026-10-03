@@ -38,10 +38,21 @@ WebSocket event stream. Token in `Authorization: Bearer`, never in URLs.
   explicit resume. Resume is always explicit, never automatic.
 - `STOPPED`: current op cancelled, queued automation cleared, generation++.
 
+## Command queue and results (M2)
+
+- Queue is bounded (16 commands). A full queue answers `QUEUE_FULL`
+  (HTTP 429) instead of accumulating work.
+- Command endpoints are rate-limited (HTTP 429 `RATE_LIMITED`).
+- Results are immutable once completed, retained bounded by count (32) and
+  bytes (256 KB) with a 5-minute TTL. Expired/unknown IDs answer
+  `RESULT_NOT_FOUND` (HTTP 404).
+- `stop` marks drained queued commands `cancelled`.
+
 ## Error codes
 
 - Transport: `AUTH_REQUIRED`, `INVALID_REQUEST`, `INVALID_URL`,
-  `BODY_TOO_LARGE`, `RATE_LIMITED`, `NOT_FOUND`, `BUSY`, `CANCELLED`.
+  `BODY_TOO_LARGE`, `RATE_LIMITED`, `QUEUE_FULL`, `SERVER_NOT_READY`,
+  `NOT_FOUND`, `RESULT_NOT_FOUND`, `BUSY`, `CANCELLED`.
 - Domain: `LOGIN_REQUIRED`, `CAPTCHA_DETECTED`, `USER_TAKEOVER`,
   `NAVIGATION_CHANGED`, `TIMEOUT`, `DOM_CHANGED`, `AI_ERROR`.
 
@@ -62,3 +73,5 @@ schemes shows a user-facing rejection.
 - Never exposed via API: cookies, WebView storage, cache, credentials,
   full page HTML, full AI conversations.
 - No token in logs, notifications, events, shell history, or exceptions.
+- Pairing is a one-time manual copy from the app screen into
+  `browserctl connect` (getpass, file mode 0600). The CLI never prints it.

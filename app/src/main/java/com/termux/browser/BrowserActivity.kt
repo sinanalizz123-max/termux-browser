@@ -2,6 +2,7 @@ package com.termux.browser
 
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.app.AlertDialog
 import android.os.Bundle
 import android.view.MotionEvent
 import android.webkit.WebResourceError
@@ -16,6 +17,13 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.webkit.WebViewCompat
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.resume
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 
 /**
  * M1 visible browser shell: manual browsing only. No Termux server, no AI
@@ -30,6 +38,16 @@ class BrowserActivity : Activity(), PageHost {
     private lateinit var logView: TextView
     private val policy = ControlPolicy()
     private val log = ActivityLog()
+    private val activityScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private val uiRunner = UiRunner { block ->
+        withContext(Dispatchers.Main) { block() }
+    }
+    private val results = ResultStore()
+    private lateinit var arbiter: CommandArbiter
+    private var server: LocalApiServer? = null
+    private var apiToken: ByteArray = ByteArray(0)
+    private var pageLoading = false
+    private var webViewVersion = "unknown"
 
     @SuppressLint("SetJavaScriptEnabled", "ClickableViewAccessibility")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -51,6 +69,10 @@ class BrowserActivity : Activity(), PageHost {
         val forward = Button(this).apply { text = "Fwd" }
         val reload = Button(this).apply { text = "Reload" }
         val stop = Button(this).apply { text = "Stop" }
+        val pair = Button(this).apply {
+            text = "Pair Termux"
+            contentDescription = "Show Termux pairing details"
+        }
         webView = WebView(this).apply {
             contentDescription = "Browser page"
         }
@@ -66,6 +88,7 @@ class BrowserActivity : Activity(), PageHost {
         nav.addView(forward)
         nav.addView(reload)
         nav.addView(stop)
+        nav.addView(pair)
         root.addView(nav)
         root.addView(
             webView,
@@ -102,6 +125,7 @@ class BrowserActivity : Activity(), PageHost {
         forward.setOnClickListener { controller.forward("user") }
         reload.setOnClickListener { controller.reload("user") }
         stop.setOnClickListener { controller.stop("user") }
+        pair.setOnClickListener { showPairing() }
         webView.setOnTouchListener { _, event ->
             if (event.action == MotionEvent.ACTION_DOWN) {
                 policy.onUserInput()
@@ -110,9 +134,16 @@ class BrowserActivity : Activity(), PageHost {
             false
         }
 
-        val webViewVersion = runCatching {
+        webViewVersion = runCatching {
             WebViewCompat.getCurrentWebViewPackage(this)?.versionName ?: "unknown"
         }.getOrDefault("unknown")
+        arbiter = CommandArbiter(activityScope, uiRunner, this, controller, policy, results)
+        apiToken = TokenStore(filesDir).getOrCreate()
+        val api = LocalApiServer(apiToken, uiRunner, arbiter, policy, log, results) {
+            currentStatus()
+        }
+        server = api
+        runCatching { api.start() }
         if (savedInstanceState != null) {
             policy.restore(
                 savedInstanceState.getInt(KEY_GENERATION),
@@ -157,7 +188,60 @@ class BrowserActivity : Activity(), PageHost {
         webView.reload()
     }
 
+    override fun onDestroy() {
+        activityScope.cancel()
+        runCatching { server?.stop() }
+        server = null
+        arbiter.close()
+        (webView.parent as? android.view.ViewGroup)?.removeView(webView)
+        webView.destroy()
+        super.onDestroy()
+    }
+
+    private fun currentStatus(): StatusBody = StatusBody(
+        state = policy.state.name,
+        url = webView.url,
+        title = webView.title,
+        loading = pageLoading,
+        generationId = policy.generation,
+        webViewVersion = webViewVersion
+    )
+
+    /**
+     * One-time local bootstrap: shows the endpoint and token on screen for
+     * manual copy into Termux. The CLI must store it privately and never
+     * print it to stdout.
+     */
+    private fun showPairing() {
+        val port = server?.port ?: -1
+        val details = TextView(this).apply {
+            text = "Host: 127.0.0.1:$port\n\nToken (copy once into Termux):\n" +
+                TokenStore(filesDir).hex(apiToken) +
+                "\n\nIn Termux: browserctl connect"
+            textIsSelectable = true
+            setPadding(32, 24, 32, 24)
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Pair Termux")
+            .setView(details)
+            .setPositiveButton("Close", null)
+            .show()
+    }
+
     override fun currentUrl(): String? = webView.url
+
+    override suspend fun evalJs(script: String): String? =
+        suspendCancellableCoroutine { cont ->
+            runOnUiThread {
+                try {
+                    webView.evaluateJavascript(script) { value ->
+                        if (cont.isActive) cont.resume(value)
+                    }
+                } catch (e: Exception) {
+                    if (cont.isActive) cont.resume(null)
+                }
+            }
+        }
 
     private fun announce(message: String) {
         statusView.text = message
@@ -185,7 +269,9 @@ class BrowserActivity : Activity(), PageHost {
         settings.setGeolocationEnabled(false)
         settings.mediaPlaybackRequiresUserGesture = true
         webView.webViewClient = object : WebViewClient() {
-            override fun shouldOverrideUrlLoading(
+            override fun onPageStarted(view: WebView, url: String, favicon: android.graphics.Bitmap?) {
+                pageLoading = true
+            }            override fun shouldOverrideUrlLoading(
                 view: WebView,
                 request: WebResourceRequest
             ): Boolean {
@@ -205,6 +291,7 @@ class BrowserActivity : Activity(), PageHost {
             }
 
             override fun onPageFinished(view: WebView, url: String) {
+                pageLoading = false
                 controller.onPageFinished(url)
             }
 

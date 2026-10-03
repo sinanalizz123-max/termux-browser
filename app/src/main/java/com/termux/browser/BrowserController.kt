@@ -13,6 +13,9 @@ interface PageHost {
     fun goForward()
     fun reload()
     fun currentUrl(): String?
+
+    /** Runs a static extraction script; returns its JSON string or null. */
+    suspend fun evalJs(script: String): String?
 }
 
 class BrowserController(

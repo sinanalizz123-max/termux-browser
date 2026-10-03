@@ -1,0 +1,180 @@
+#!/usr/bin/env python3
+"""browserctl — Termux CLI for the Termux Browser control API (M2).
+
+Reads endpoint + token from ~/.config/termux-browser/config (mode 0600).
+The token is never printed to stdout, never passed as a CLI argument.
+"""
+import getpass
+import json
+import os
+import sys
+import time
+import urllib.request
+import urllib.error
+
+CONFIG_DIR = os.path.expanduser("~/.config/termux-browser")
+CONFIG_PATH = os.path.join(CONFIG_DIR, "config")
+
+
+def load_config():
+    try:
+        with open(CONFIG_PATH) as f:
+            cfg = json.load(f)
+        return cfg["host"], int(cfg["port"]), cfg["token"]
+    except (OSError, KeyError, ValueError):
+        print("Not connected. Run: browserctl connect", file=sys.stderr)
+        sys.exit(2)
+
+
+def api(method, path, body=None):
+    host, port, token = load_config()
+    data = json.dumps(body).encode() if body is not None else None
+    req = urllib.request.Request(
+        f"http://{host}:{port}/v1{path}",
+        data=data,
+        method=method,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return resp.status, json.loads(resp.read().decode())
+    except urllib.error.HTTPError as e:
+        try:
+            return e.code, json.loads(e.read().decode())
+        except Exception:
+            return e.code, {"http_error": e.code}
+    except Exception as e:
+        return -1, {"error": str(e)}
+
+
+def cmd_connect(_args):
+    print("Pair with the app: open Termux Browser, tap 'Pair Termux'.")
+    host = input("Host [127.0.0.1]: ").strip() or "127.0.0.1"
+    port = input("Port: ").strip()
+    token = getpass.getpass("Token (paste once, not echoed): ").strip()
+    if not port.isdigit() or not token:
+        print("connect aborted: need a numeric port and a token.", file=sys.stderr)
+        sys.exit(2)
+    os.makedirs(CONFIG_DIR, mode=0o700, exist_ok=True)
+    with open(CONFIG_PATH, "w") as f:
+        json.dump({"host": host, "port": int(port), "token": token}, f)
+    os.chmod(CONFIG_PATH, 0o600)
+    print("Connected. Token stored privately; it is never printed.")
+
+
+def cmd_status(_args):
+    code, body = api("GET", "/status")
+    print(json.dumps(body, indent=2))
+
+
+def cmd_open(args):
+    if not args:
+        print("usage: browserctl open <url>", file=sys.stderr)
+        sys.exit(2)
+    code, body = api("POST", "/commands/open", {"url": args[0]})
+    print(json.dumps(body, indent=2))
+
+
+def cmd_search(args):
+    if not args:
+        print("usage: browserctl search <query>", file=sys.stderr)
+        sys.exit(2)
+    code, body = api("POST", "/commands/search", {"query": " ".join(args)})
+    print(json.dumps(body, indent=2))
+
+
+def cmd_read(args):
+    import argparse
+    p = argparse.ArgumentParser(prog="browserctl read")
+    p.add_argument("--scope", default="page")
+    p.add_argument("--max-chars", type=int, default=20000)
+    p.add_argument("--wait", type=int, default=30)
+    ns = p.parse_args(args)
+    code, body = api("POST", "/commands/read",
+                     {"scope": ns.scope, "maxChars": ns.max_chars})
+    print(json.dumps(body, indent=2))
+    cmd_id = body.get("envelope", {}).get("commandId")
+    if cmd_id and ns.wait > 0:
+        cmd_result([cmd_id, "--wait", str(ns.wait)])
+
+
+def cmd_result(args):
+    wait = 0
+    if "--wait" in args:
+        i = args.index("--wait")
+        wait = int(args[i + 1])
+        args = args[:i] + args[i + 2:]
+    if not args:
+        print("usage: browserctl result <command-id> [--wait N]", file=sys.stderr)
+        sys.exit(2)
+    deadline = time.time() + wait
+    while True:
+        code, body = api("GET", f"/result/{args[0]}")
+        if code != 404 or time.time() >= deadline:
+            print(json.dumps(body, indent=2))
+            return
+        time.sleep(1)
+
+
+def cmd_log(args):
+    n = "20"
+    if "--last" in args:
+        n = args[args.index("--last") + 1]
+    code, body = api("GET", "/activity?since=0")
+    events = body.get("events", [])
+    print(json.dumps(events[-int(n):], indent=2))
+
+
+def cmd_control(name):
+    def run(_args):
+        code, body = api("POST", f"/control/{name}")
+        print(json.dumps(body, indent=2))
+    return run
+
+
+def cmd_stop_cmd(_args):
+    code, body = api("POST", "/commands/stop")
+    print(json.dumps(body, indent=2))
+
+
+def cmd_watch(_args):
+    since = 0
+    try:
+        while True:
+            code, body = api("GET", f"/activity?since={since}")
+            for e in body.get("events", []):
+                since = max(since, e.get("id", since))
+                print(f"[{e.get('source')}] {e.get('action')}: {e.get('detail', '')[:160]}")
+            time.sleep(2)
+    except KeyboardInterrupt:
+        pass
+
+
+COMMANDS = {
+    "connect": cmd_connect,
+    "status": cmd_status,
+    "open": cmd_open,
+    "search": cmd_search,
+    "read": cmd_read,
+    "result": cmd_result,
+    "log": cmd_log,
+    "pause": cmd_control("pause"),
+    "resume": cmd_control("resume"),
+    "control-stop": cmd_control("stop"),
+    "stop": cmd_stop_cmd,
+    "watch": cmd_watch,
+}
+
+
+def main(argv):
+    if len(argv) < 2 or argv[1] not in COMMANDS:
+        print("usage: browserctl {" + "|".join(sorted(COMMANDS)) + "}", file=sys.stderr)
+        sys.exit(2)
+    COMMANDS[argv[1]](argv[2:])
+
+
+if __name__ == "__main__":
+    main(sys.argv)
