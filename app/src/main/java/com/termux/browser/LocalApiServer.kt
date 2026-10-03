@@ -3,15 +3,15 @@ package com.termux.browser
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.kotlinx.json.json
-import io.ktor.server.application.ApplicationCall
-import io.ktor.server.application.call
+import io.ktor.server.application.install
 import io.ktor.server.cio.CIO
-import io.ktor.server.engine.ApplicationEngine
+import io.ktor.server.engine.EmbeddedServer
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.request.header
 import io.ktor.server.request.receiveText
 import io.ktor.server.response.respondText
+import io.ktor.server.routing.RoutingContext
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.route
@@ -56,37 +56,42 @@ class LocalApiServer(
     private val policy: ControlPolicy,
     private val log: ActivityLog,
     private val results: ResultStore,
-    private val status: suspend () -> StatusBody,
+    private val statusProvider: suspend () -> StatusBody,
     private val json: Json = Json { ignoreUnknownKeys = true; explicitNulls = false }
 ) {
-    private var engine: ApplicationEngine? = null
+    private var engine: EmbeddedServer<*, *>? = null
     var port: Int = -1
         private set
 
     private val commandLimiter = RateLimiter(max = 60, windowMs = 60_000)
 
-    fun start(): Int {
-        val server = embeddedServer(CIO, host = "127.0.0.1", port = 0) {
-            install(ContentNegotiation) { json(json) }
-            routing {
-                route("/v1") {
-                    get("/status") { handleStatus() }
-                    get("/activity") { handleActivity() }
-                    get("/result/{id}") { handleResult() }
-                    post("/commands/open") { handleOpen() }
-                    post("/commands/search") { handleSearch() }
-                    post("/commands/back") { handleNavigate(BrowserCommand.Navigate.Kind.BACK) }
-                    post("/commands/forward") { handleNavigate(BrowserCommand.Navigate.Kind.FORWARD) }
-                    post("/commands/reload") { handleNavigate(BrowserCommand.Navigate.Kind.RELOAD) }
-                    post("/commands/stop") { handleStopCommand() }
-                    post("/commands/read") { handleRead() }
-                    post("/commands/ai-chat") { handleNotImplemented() }
-                    post("/control/pause") { handlePause() }
-                    post("/control/resume") { handleResume() }
-                    post("/control/stop") { handleControlStop() }
+    suspend fun start(): Int {
+        val server = embeddedServer(
+            factory = CIO,
+            host = "127.0.0.1",
+            port = 0,
+            module = {
+                install(ContentNegotiation) { json(json) }
+                routing {
+                    route("/v1") {
+                        get("/status") { handleStatus() }
+                        get("/activity") { handleActivity() }
+                        get("/result/{id}") { handleResult() }
+                        post("/commands/open") { handleOpen() }
+                        post("/commands/search") { handleSearch() }
+                        post("/commands/back") { handleNavigate(BrowserCommand.Navigate.Kind.BACK) }
+                        post("/commands/forward") { handleNavigate(BrowserCommand.Navigate.Kind.FORWARD) }
+                        post("/commands/reload") { handleNavigate(BrowserCommand.Navigate.Kind.RELOAD) }
+                        post("/commands/stop") { handleStopCommand() }
+                        post("/commands/read") { handleRead() }
+                        post("/commands/ai-chat") { handleNotImplemented() }
+                        post("/control/pause") { handlePause() }
+                        post("/control/resume") { handleResume() }
+                        post("/control/stop") { handleControlStop() }
+                    }
                 }
             }
-        }.start(wait = false)
+        ).start(wait = false)
         engine = server
         port = server.engine.resolvedConnectors().first().port
         log.add("system", "api_started", "127.0.0.1:$port")
@@ -99,25 +104,22 @@ class LocalApiServer(
         port = -1
     }
 
-    private fun requestId(call: ApplicationCall): String =
+    private fun RoutingContext.requestId(): String =
         call.request.header("X-Request-Id")?.take(64) ?: ("req-" + UUID.randomUUID())
 
-    private fun envelope(
-        call: ApplicationCall,
-        commandId: String? = null
-    ): Envelope = Envelope(
-        requestId = requestId(call),
+    private fun RoutingContext.envelope(commandId: String? = null): Envelope = Envelope(
+        requestId = requestId(),
         commandId = commandId,
         generationId = policy.generation
     )
 
-    private suspend fun ApplicationCall.authorized(): Boolean {
-        if (!RequestValidator.checkBearer(request.header("Authorization"), token)) {
+    private suspend fun RoutingContext.authorized(): Boolean {
+        if (!RequestValidator.checkBearer(call.request.header("Authorization"), token)) {
             val body = ApiErrorBody(
-                envelope = envelope(this),
+                envelope = envelope(),
                 error = ErrorDetail(ErrorCodes.AUTH_REQUIRED, "Missing or invalid bearer token.")
             )
-            respondText(
+            call.respondText(
                 json.encodeToString(body),
                 ContentType.Application.Json,
                 HttpStatusCode.Unauthorized
@@ -127,12 +129,12 @@ class LocalApiServer(
         return true
     }
 
-    private suspend fun ApplicationCall.readJsonBody(): String? {
-        if (request.header("Content-Type")?.startsWith("application/json") != true) {
+    private suspend fun RoutingContext.readJsonBody(): String? {
+        if (call.request.header("Content-Type")?.startsWith("application/json") != true) {
             error(ErrorCodes.INVALID_REQUEST, "Content-Type must be application/json.")
             return null
         }
-        val text = runCatching { receiveText() }.getOrNull()
+        val text = runCatching { call.receiveText() }.getOrNull()
         if (text == null) {
             error(ErrorCodes.INVALID_REQUEST, "Unreadable request body.")
             return null
@@ -144,22 +146,22 @@ class LocalApiServer(
         return text
     }
 
-    private suspend fun ApplicationCall.error(code: String, message: String) {
-        val body = ApiErrorBody(envelope(this), ErrorDetail(code, message))
-        respondText(
+    private suspend fun RoutingContext.error(code: String, message: String) {
+        val body = ApiErrorBody(envelope(), ErrorDetail(code, message))
+        call.respondText(
             json.encodeToString(body),
             ContentType.Application.Json,
             HttpStatusCode.BadRequest
         )
     }
 
-    private suspend fun ApplicationCall.rateLimited(): Boolean {
+    private suspend fun RoutingContext.rateLimited(): Boolean {
         if (commandLimiter.tryAcquire()) return false
         val body = ApiErrorBody(
-            envelope(this),
+            envelope(),
             ErrorDetail(ErrorCodes.RATE_LIMITED, "Too many requests.", recoverable = true)
         )
-        respondText(
+        call.respondText(
             json.encodeToString(body),
             ContentType.Application.Json,
             HttpStatusCode.TooManyRequests
@@ -167,66 +169,67 @@ class LocalApiServer(
         return true
     }
 
-    private suspend fun ApplicationCall.accepted(accepted: SubmitResult.Accepted) {
-        val body = AcceptedBody(envelope(this, accepted.commandId))
-        respondText(json.encodeToString(body), ContentType.Application.Json)
+    private suspend fun RoutingContext.accepted(accepted: SubmitResult.Accepted) {
+        val body = AcceptedBody(envelope(accepted.commandId))
+        call.respondText(json.encodeToString(body), ContentType.Application.Json)
     }
 
-    private suspend fun ApplicationCall.queueFull() {
+    private suspend fun RoutingContext.queueFull() {
         val body = ApiErrorBody(
-            envelope(this),
+            envelope(),
             ErrorDetail(ErrorCodes.QUEUE_FULL, "Command queue is full.", recoverable = true)
         )
-        respondText(
+        call.respondText(
             json.encodeToString(body),
             ContentType.Application.Json,
             HttpStatusCode.TooManyRequests
         )
     }
 
-    private suspend fun ApplicationCall.handleStatus() {
+    private suspend fun RoutingContext.handleStatus() {
         if (!authorized()) return
-        val current = ui.run { status() }
-        val body = current.copy(envelope = envelope(this))
-        respondText(json.encodeToString(body), ContentType.Application.Json)
+        val current = ui.run { statusProvider() }
+        val body = current.copy(envelope = envelope())
+        call.respondText(json.encodeToString(body), ContentType.Application.Json)
     }
 
-    private suspend fun ApplicationCall.handleActivity() {
+    private suspend fun RoutingContext.handleActivity() {
         if (!authorized()) return
-        val since = request.queryParameters["since"]?.toLongOrNull() ?: 0L
+        val since = call.request.queryParameters["since"]?.toLongOrNull() ?: 0L
         val events = log.since(since)
         val items = events.joinToString(",") {
             """{"id":${it.id},"timestamp":${it.timestamp},"source":${json.encodeToString(it.source)},"action":${json.encodeToString(it.action)},"detail":${json.encodeToString(it.detail)}}"""
         }
-        respondText(
-            """{"envelope":${json.encodeToString(envelope(this))},"events":[$items]}""",
+        call.respondText(
+            """{"envelope":${json.encodeToString(envelope())},"events":[$items]}""",
             ContentType.Application.Json
         )
     }
 
-    private suspend fun ApplicationCall.handleResult() {
+    private suspend fun RoutingContext.handleResult() {
         if (!authorized()) return
-        val id = parameters["id"] ?: return error(ErrorCodes.INVALID_REQUEST, "Missing id.")
+        val id = call.parameters["id"]
+            ?: return error(ErrorCodes.INVALID_REQUEST, "Missing id.")
         val stored = results.get(id)
         if (stored == null) {
             val body = ApiErrorBody(
-                envelope(this, id),
+                envelope(id),
                 ErrorDetail(ErrorCodes.RESULT_NOT_FOUND, "Unknown or expired result.")
             )
-            respondText(
+            call.respondText(
                 json.encodeToString(body),
                 ContentType.Application.Json,
                 HttpStatusCode.NotFound
             )
             return
         }
-        respondText(
-            """{"envelope":${json.encodeToString(envelope(this, id))},"state":"completed","result":${stored.body}}""",
+        call.respondText(
+            """{"envelope":${json.encodeToString(envelope(id))},"state":"completed","result":${stored.body}}""",
             ContentType.Application.Json
         )
     }
 
-    private suspend fun ApplicationCall.handleOpen() {
+    private suspend fun RoutingContext.handleOpen() {
         if (!authorized() || rateLimited()) return
         val text = readJsonBody() ?: return
         val url = runCatching {
@@ -239,7 +242,7 @@ class LocalApiServer(
         }
     }
 
-    private suspend fun ApplicationCall.handleSearch() {
+    private suspend fun RoutingContext.handleSearch() {
         if (!authorized() || rateLimited()) return
         val text = readJsonBody() ?: return
         val query = runCatching {
@@ -254,7 +257,7 @@ class LocalApiServer(
         }
     }
 
-    private suspend fun ApplicationCall.handleNavigate(kind: BrowserCommand.Navigate.Kind) {
+    private suspend fun RoutingContext.handleNavigate(kind: BrowserCommand.Navigate.Kind) {
         if (!authorized() || rateLimited()) return
         when (val submitted = arbiter.submit(BrowserCommand.Navigate(kind, "termux"))) {
             is SubmitResult.Accepted -> accepted(submitted)
@@ -262,16 +265,16 @@ class LocalApiServer(
         }
     }
 
-    private suspend fun ApplicationCall.handleStopCommand() {
+    private suspend fun RoutingContext.handleStopCommand() {
         if (!authorized()) return
         arbiter.stopNow("termux")
-        respondText(
-            """{"envelope":${json.encodeToString(envelope(this))},"state":"stopped"}""",
+        call.respondText(
+            """{"envelope":${json.encodeToString(envelope())},"state":"stopped"}""",
             ContentType.Application.Json
         )
     }
 
-    private suspend fun ApplicationCall.handleRead() {
+    private suspend fun RoutingContext.handleRead() {
         if (!authorized() || rateLimited()) return
         val text = readJsonBody() ?: return
         val request = runCatching {
@@ -288,36 +291,36 @@ class LocalApiServer(
         }
     }
 
-    private suspend fun ApplicationCall.handleNotImplemented() {
+    private suspend fun RoutingContext.handleNotImplemented() {
         if (!authorized()) return
         error(ErrorCodes.INVALID_REQUEST, "ai-chat is reserved for a later milestone.")
     }
 
-    private suspend fun ApplicationCall.handlePause() {
+    private suspend fun RoutingContext.handlePause() {
         if (!authorized()) return
         policy.onPause()
         log.add("termux", "pause", "")
-        respondText(
-            """{"envelope":${json.encodeToString(envelope(this))},"state":"${policy.state.name}"}""",
+        call.respondText(
+            """{"envelope":${json.encodeToString(envelope())},"state":"${policy.state.name}"}""",
             ContentType.Application.Json
         )
     }
 
-    private suspend fun ApplicationCall.handleResume() {
+    private suspend fun RoutingContext.handleResume() {
         if (!authorized()) return
         policy.onResume()
         log.add("termux", "resume", "")
-        respondText(
-            """{"envelope":${json.encodeToString(envelope(this))},"state":"${policy.state.name}"}""",
+        call.respondText(
+            """{"envelope":${json.encodeToString(envelope())},"state":"${policy.state.name}"}""",
             ContentType.Application.Json
         )
     }
 
-    private suspend fun ApplicationCall.handleControlStop() {
+    private suspend fun RoutingContext.handleControlStop() {
         if (!authorized()) return
         arbiter.stopNow("termux")
-        respondText(
-            """{"envelope":${json.encodeToString(envelope(this))},"state":"${policy.state.name}"}""",
+        call.respondText(
+            """{"envelope":${json.encodeToString(envelope())},"state":"${policy.state.name}"}""",
             ContentType.Application.Json
         )
     }

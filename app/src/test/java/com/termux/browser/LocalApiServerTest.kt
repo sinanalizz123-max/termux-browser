@@ -4,6 +4,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -57,12 +58,14 @@ class LocalApiServerTest {
         val host = FakeHost()
         val controller = BrowserController(host, policy, log) {}
         scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
-        val ui = UiRunner { it() }
+        val ui = object : UiRunner {
+            override suspend fun <T> run(block: () -> T): T = block()
+        }
         arbiter = CommandArbiter(scope, ui, host, controller, policy, results)
         server = LocalApiServer(token, ui, arbiter, policy, log, results) {
             StatusBody(state = policy.state.name)
         }
-        port = server.start()
+        port = runBlocking { server.start() }
     }
 
     @After

@@ -31,7 +31,7 @@ sealed interface SubmitResult {
     data object QueueFull : SubmitResult
 }
 
-fun interface UiRunner {
+interface UiRunner {
     suspend fun <T> run(block: () -> T): T
 }
 

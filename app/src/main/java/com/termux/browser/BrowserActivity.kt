@@ -21,9 +21,10 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.resume
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlin.coroutines.resume
 
 /**
  * M1 visible browser shell: manual browsing only. No Termux server, no AI
@@ -39,8 +40,9 @@ class BrowserActivity : Activity(), PageHost {
     private val policy = ControlPolicy()
     private val log = ActivityLog()
     private val activityScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-    private val uiRunner = UiRunner { block ->
-        withContext(Dispatchers.Main) { block() }
+    private val uiRunner = object : UiRunner {
+        override suspend fun <T> run(block: () -> T): T =
+            withContext(Dispatchers.Main) { block() }
     }
     private val results = ResultStore()
     private lateinit var arbiter: CommandArbiter
@@ -143,7 +145,7 @@ class BrowserActivity : Activity(), PageHost {
             currentStatus()
         }
         server = api
-        runCatching { api.start() }
+        activityScope.launch { runCatching { api.start() } }
         if (savedInstanceState != null) {
             policy.restore(
                 savedInstanceState.getInt(KEY_GENERATION),
@@ -218,7 +220,7 @@ class BrowserActivity : Activity(), PageHost {
             text = "Host: 127.0.0.1:$port\n\nToken (copy once into Termux):\n" +
                 TokenStore(filesDir).hex(apiToken) +
                 "\n\nIn Termux: browserctl connect"
-            textIsSelectable = true
+            setTextIsSelectable(true)
             setPadding(32, 24, 32, 24)
         }
         AlertDialog.Builder(this)

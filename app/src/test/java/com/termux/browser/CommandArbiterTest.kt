@@ -23,6 +23,10 @@ class CommandArbiterTest {
         override suspend fun evalJs(script: String): String? = evalResult
     }
 
+    private fun ui(): UiRunner = object : UiRunner {
+        override suspend fun <T> run(block: () -> T): T = block()
+    }
+
     private suspend fun awaitResult(
         results: ResultStore,
         commandId: String
@@ -44,7 +48,7 @@ class CommandArbiterTest {
         val results = ResultStore()
         val controller = BrowserController(host, policy, ActivityLog()) {}
         val arbiter = CommandArbiter(
-            this, UiRunner { it() }, host, controller, policy, results
+            this, ui(), host, controller, policy, results
         )
         try {
             val submitted = arbiter.submit(BrowserCommand.Open("https://example.com", "termux"))
@@ -65,7 +69,7 @@ class CommandArbiterTest {
         val results = ResultStore()
         val controller = BrowserController(host, policy, ActivityLog()) {}
         val arbiter = CommandArbiter(
-            this, UiRunner { it() }, host, controller, policy, results
+            this, ui(), host, controller, policy, results
         )
         try {
             val submitted = arbiter.submit(BrowserCommand.Read("page", 100))
@@ -86,7 +90,7 @@ class CommandArbiterTest {
         val results = ResultStore()
         val controller = BrowserController(host, policy, ActivityLog()) {}
         val arbiter = CommandArbiter(
-            this, UiRunner { it() }, host, controller, policy, results
+            this, ui(), host, controller, policy, results
         )
         try {
             repeat(ProtocolLimits.MAX_QUEUE) {
