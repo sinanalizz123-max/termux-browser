@@ -6,9 +6,11 @@ import io.ktor.client.engine.mock.respond
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.supervisorScope
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -76,16 +78,13 @@ class OpenAiProviderTest {
             },
             timeoutMs = 60_000
         )
-        val job = launch { hanging.chat("Hi.", "k", 100) }
-        delay(200)
-        job.cancel()
-        var cancelled = false
-        try {
-            job.join()
-        } catch (_: kotlinx.coroutines.CancellationException) {
-            cancelled = true
+        // Isolated scope: child cancellation must not take down the test.
+        supervisorScope {
+            val job = launch { hanging.chat("Hi.", "k", 100) }
+            delay(200)
+            job.cancelAndJoin()
+            assertTrue(job.isCancelled)
         }
-        assertTrue(cancelled)
     }
 
     @Test
