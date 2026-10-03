@@ -80,7 +80,12 @@ class LocalApiServer(
             port = 0,
             module = {
                 install(ContentNegotiation) { json(json) }
-                install(WebSockets)
+                install(WebSockets) {
+                    // Keep idle streams alive so watchers can distinguish
+                    // "no events yet" from a dead connection.
+                    pingPeriod = kotlin.time.Duration.parse("20s")
+                    timeout = kotlin.time.Duration.parse("30s")
+                }
                 routing {
                     route("/v1") {
                         get("/status") { handleStatus() }

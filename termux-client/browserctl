@@ -243,6 +243,7 @@ def ws_recv_text(s):
 
 def cmd_watch(_args):
     import json as _json
+    import socket as _socket
     host, port, token = load_config()
     try:
         with open(os.path.expanduser("~/.config/termux-browser/last-event")) as f:
@@ -253,9 +254,13 @@ def cmd_watch(_args):
     while True:
         try:
             s = ws_connect(host, port, f"/v1/events?since={since}", token)
+            s.settimeout(60)
             backoff = 1
             while True:
-                body = _json.loads(ws_recv_text(s))
+                try:
+                    body = _json.loads(ws_recv_text(s))
+                except _socket.timeout:
+                    continue
                 if body.get("type") == "history_gap":
                     print("history gap: resynchronizing from status", file=sys.stderr)
                     since = 0
