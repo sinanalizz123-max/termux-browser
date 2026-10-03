@@ -94,6 +94,7 @@ class LocalApiServer(
                         post("/commands/stop") { handleStopCommand() }
                     post("/commands/read") { handleRead() }
                     post("/commands/ai-chat") { handleAiChat() }
+                    post("/commands/api-chat") { handleApiChat() }
                     post("/control/pause") { handlePause() }
                     post("/control/resume") { handleResume() }
                     post("/control/stop") { handleControlStop() }
@@ -312,6 +313,23 @@ class LocalApiServer(
         }
         when (val submitted = arbiter.submit(
             BrowserCommand.AiChat(request.site, request.prompt, request.maxChars, "termux")
+        )) {
+            is SubmitResult.Accepted -> accepted(submitted)
+            is SubmitResult.QueueFull -> queueFull()
+        }
+    }
+
+    private suspend fun RoutingContext.handleApiChat() {
+        if (!authorized() || rateLimited()) return
+        val text = readJsonBody() ?: return
+        val request = runCatching {
+            json.decodeFromString<AiChatRequest>(text)
+        }.getOrNull() ?: return error(ErrorCodes.INVALID_REQUEST, "Invalid api-chat request.")
+        RequestValidator.checkAiChat(request.site, request.prompt, request.maxChars)?.let {
+            return error(it, "Rejected api-chat request.")
+        }
+        when (val submitted = arbiter.submit(
+            BrowserCommand.ApiChat(request.site, request.prompt, request.maxChars, "termux")
         )) {
             is SubmitResult.Accepted -> accepted(submitted)
             is SubmitResult.QueueFull -> queueFull()

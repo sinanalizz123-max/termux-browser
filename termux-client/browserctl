@@ -145,6 +145,23 @@ def cmd_ai(args):
         cmd_result([cmd_id, "--wait", str(ns.wait)])
 
 
+def cmd_apichat(args):
+    import argparse
+    p = argparse.ArgumentParser(prog="browserctl apichat")
+    p.add_argument("provider")
+    p.add_argument("prompt", nargs="+")
+    p.add_argument("--max-chars", type=int, default=20000)
+    p.add_argument("--wait", type=int, default=120)
+    ns = p.parse_args(args)
+    code, body = api("POST", "/commands/api-chat",
+                     {"site": ns.provider, "prompt": " ".join(ns.prompt),
+                      "maxChars": ns.max_chars})
+    print(json.dumps(body, indent=2))
+    cmd_id = body.get("envelope", {}).get("commandId")
+    if cmd_id and ns.wait > 0:
+        cmd_result([cmd_id, "--wait", str(ns.wait)])
+
+
 def cmd_control(name):
     def run(_args):
         code, body = api("POST", f"/control/{name}")
@@ -265,6 +282,7 @@ def cmd_watch(_args):
 COMMANDS = {
     "connect": cmd_connect,
     "ai": cmd_ai,
+    "apichat": cmd_apichat,
     "status": cmd_status,
     "open": cmd_open,
     "search": cmd_search,

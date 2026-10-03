@@ -27,6 +27,8 @@ WebSocket event stream. Token in `Authorization: Bearer`, never in URLs.
 - `GET /v1/result/<command-id>`
 - `POST /v1/commands/open|search|back|forward|reload|stop|read`
 - `POST /v1/commands/ai-chat` — reserved in M0/M1, implemented M7+.
+- `POST /v1/commands/api-chat` — M10 provider API chat; same envelope and
+  result semantics. Provider keys live app-side only and never cross the API.
 - `POST /v1/control/pause|resume|stop`
 - `WS /v1/events` — live stream; `/v1/activity?since=` is replay, not live.
 

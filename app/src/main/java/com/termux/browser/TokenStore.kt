@@ -21,14 +21,17 @@ interface TokenCrypto {
     fun decrypt(iv: ByteArray, ciphertext: ByteArray): ByteArray
 }
 
-class KeystoreTokenCrypto : TokenCrypto {
+class KeystoreTokenCrypto(private val alias: String = ALIAS) : TokenCrypto {
     companion object {
         const val ALIAS = "termux_browser_api"
+
+        /** Separate namespace for provider API keys; never the bearer token. */
+        fun providerAlias(providerId: String): String = "termux_browser_key_$providerId"
     }
 
     private fun key(): SecretKey {
         val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-        (store.getEntry(ALIAS, null) as? KeyStore.SecretKeyEntry)?.let {
+        (store.getEntry(alias, null) as? KeyStore.SecretKeyEntry)?.let {
             return it.secretKey
         }
         val generator = KeyGenerator.getInstance(
@@ -36,7 +39,7 @@ class KeystoreTokenCrypto : TokenCrypto {
         )
         generator.init(
             KeyGenParameterSpec.Builder(
-                ALIAS,
+                alias,
                 KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
             )
                 .setBlockModes(KeyProperties.BLOCK_MODE_GCM)

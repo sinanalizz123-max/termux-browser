@@ -11,6 +11,7 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Button
+import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -18,9 +19,16 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.webkit.WebViewCompat
 import com.termux.browser.ai.AdapterRegistry
+import com.termux.browser.ai.AiApiRunner
+import com.termux.browser.ai.ApiCredentialStore
 import com.termux.browser.ai.ChatGPTAdapter
 import com.termux.browser.ai.DeepSeekAdapter
 import com.termux.browser.ai.GenericAdapter
+import com.termux.browser.ai.OpenAiProvider
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.cio.CIO
+import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -98,6 +106,10 @@ class BrowserActivity : Activity(), PageHost {
             text = "Pair Termux"
             contentDescription = "Show Termux pairing details"
         }
+        val apiKeys = Button(this).apply {
+            text = "API keys"
+            contentDescription = "Manage provider API keys"
+        }
         webView = WebView(this).apply {
             contentDescription = "Browser page"
         }
@@ -114,6 +126,7 @@ class BrowserActivity : Activity(), PageHost {
         nav.addView(reload)
         nav.addView(stop)
         nav.addView(pair)
+        nav.addView(apiKeys)
         root.addView(nav)
         root.addView(
             webView,
@@ -157,6 +170,7 @@ class BrowserActivity : Activity(), PageHost {
         reload.setOnClickListener { controller.reload("user") }
         stop.setOnClickListener { controller.stop("user") }
         pair.setOnClickListener { showPairing() }
+        apiKeys.setOnClickListener { showApiKeys() }
         webView.setOnTouchListener { _, event ->
             if (event.action == MotionEvent.ACTION_DOWN) {
                 policy.onUserInput()
@@ -169,11 +183,19 @@ class BrowserActivity : Activity(), PageHost {
             WebViewCompat.getCurrentWebViewPackage(this)?.versionName ?: "unknown"
         }.getOrDefault("unknown")
         notifier = SessionNotifier(this)
+        val apiCredentials = ApiCredentialStore(filesDir) { providerId ->
+            KeystoreTokenCrypto(KeystoreTokenCrypto.providerAlias(providerId))
+        }
+        val apiRunner = AiApiRunner(
+            apiCredentials,
+            mapOf("openai" to OpenAiProvider(productionApiClient()))
+        )
         arbiter = CommandArbiter(
             activityScope, uiRunner, this, controller, policy, results, bus,
             registry = AdapterRegistry(
                 listOf(ChatGPTAdapter(), DeepSeekAdapter(), GenericAdapter())
             ),
+            apiRunner = apiRunner,
             onWorkChanged = { active -> onAutomationWorkChanged(active) }
         )
         apiToken = TokenStore(filesDir, tokenCryptoOverride ?: KeystoreTokenCrypto())
@@ -268,6 +290,72 @@ class BrowserActivity : Activity(), PageHost {
         (webView.parent as? android.view.ViewGroup)?.removeView(webView)
         webView.destroy()
         super.onDestroy()
+    }
+
+    private fun productionApiClient(): HttpClient {
+        return HttpClient(CIO) {
+            install(ContentNegotiation) {
+                json()
+            }
+        }
+    }
+
+    /**
+     * M10 manual key management. Keys are typed in-app only, stored encrypted
+     * per provider, and never cross the Termux API. The input field uses a
+     * password transformation and is cleared on dismiss.
+     */
+    private fun showApiKeys() {
+        val store = ApiCredentialStore(filesDir) { providerId ->
+            KeystoreTokenCrypto(KeystoreTokenCrypto.providerAlias(providerId))
+        }
+        val providerId = "openai"
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(48, 32, 48, 32)
+        }
+        val status = TextView(this)
+        val input = EditText(this).apply {
+            hint = "Paste API key"
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+            contentDescription = "API key input"
+        }
+        val enabled = CheckBox(this).apply { text = "Enabled" }
+        fun refresh() {
+            val has = store.hasKey(providerId)
+            status.text = "openai: key " + (if (has) "set" else "missing") +
+                ", " + (if (store.isEnabled(providerId)) "enabled" else "disabled")
+            enabled.isChecked = store.isEnabled(providerId)
+        }
+        layout.addView(status)
+        layout.addView(input)
+        layout.addView(enabled)
+        refresh()
+        enabled.setOnCheckedChangeListener { _, checked ->
+            store.setEnabled(providerId, checked)
+            refresh()
+        }
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Provider API keys")
+            .setView(layout)
+            .setPositiveButton("Save key") { _, _ ->
+                val key = input.text.toString()
+                if (key.isNotBlank()) {
+                    store.setKey(providerId, key)
+                    input.text.clear()
+                }
+                refresh()
+            }
+            .setNeutralButton("Delete key") { _, _ ->
+                store.deleteKey(providerId)
+                input.text.clear()
+                refresh()
+            }
+            .setNegativeButton("Close", null)
+            .create()
+        dialog.setOnDismissListener { input.text.clear() }
+        dialog.show()
     }
 
     private fun currentStatus(): StatusBody = StatusBody(

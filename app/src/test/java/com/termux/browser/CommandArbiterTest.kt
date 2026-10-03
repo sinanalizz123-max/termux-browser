@@ -1,5 +1,9 @@
 package com.termux.browser
 
+import com.termux.browser.ai.AiApiRunner
+import com.termux.browser.ai.ApiCredentialStore
+import com.termux.browser.ai.ApiOutcome
+import com.termux.browser.ai.ApiProvider
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
@@ -279,6 +283,71 @@ class CommandArbiterTest {
             assertFalse(stored.body.contains("p".repeat(3000)))
         } finally {
             arbiter.close()
+        }
+    }
+
+    @Test
+    fun `api-chat without a runner fails closed`() = runBlocking {
+        val host = FakeHost()
+        val policy = ControlPolicy()
+        val results = ResultStore()
+        val controller = BrowserController(host, policy, ActivityLog(), announce = {})
+        val arbiter = CommandArbiter(
+            this, ui(), host, controller, policy, results
+        )
+        try {
+            val submitted = arbiter.submit(
+                BrowserCommand.ApiChat("openai", "Hi.", 100, "termux")
+            )
+            val id = (submitted as SubmitResult.Accepted).commandId
+            val stored = awaitResult(results, id)
+            assertTrue(stored.body.contains("INVALID_REQUEST"))
+            assertTrue(host.url == null)
+        } finally {
+            arbiter.close()
+        }
+    }
+
+    @Test
+    fun `api-chat via runner completes without touching the page`() = runBlocking {
+        val host = FakeHost()
+        val policy = ControlPolicy()
+        val results = ResultStore()
+        val controller = BrowserController(host, policy, ActivityLog(), announce = {})
+        val fakeCrypto = object : TokenCrypto {
+            override fun encrypt(plain: ByteArray): Pair<ByteArray, ByteArray> =
+                ByteArray(12) { 7 } to plain.copyOf()
+
+            override fun decrypt(iv: ByteArray, ciphertext: ByteArray): ByteArray =
+                ciphertext.copyOf()
+        }
+        val dir = java.io.File(System.getProperty("java.io.tmpdir"), "tb-apitest-${System.nanoTime()}")
+        dir.mkdirs()
+        val store = ApiCredentialStore(dir) { fakeCrypto }
+        store.setKey("openai", "sk-test")
+        val provider = object : ApiProvider {
+            override val id = "openai"
+            override suspend fun chat(prompt: String, credential: String, maxChars: Int): ApiOutcome {
+                assertEquals("sk-test", credential)
+                return ApiOutcome.Text("api answer", false)
+            }
+        }
+        val arbiter = CommandArbiter(
+            this, ui(), host, controller, policy, results,
+            apiRunner = AiApiRunner(store, mapOf("openai" to provider))
+        )
+        try {
+            val submitted = arbiter.submit(
+                BrowserCommand.ApiChat("openai", "Hi.", 100, "termux")
+            )
+            val id = (submitted as SubmitResult.Accepted).commandId
+            val stored = awaitResult(results, id)
+            assertTrue(stored.body.contains("completed"))
+            assertTrue(stored.body.contains("api answer"))
+            assertTrue(host.url == null)
+        } finally {
+            arbiter.close()
+            dir.deleteRecursively()
         }
     }
 

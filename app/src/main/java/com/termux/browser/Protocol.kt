@@ -47,6 +47,7 @@ object ErrorCodes {
     const val DOM_CHANGED = "DOM_CHANGED"
     const val AI_ERROR = "AI_ERROR"
     const val ADAPTER_UNRECOGNIZED = "ADAPTER_UNRECOGNIZED"
+    const val PROVIDER_DISABLED = "PROVIDER_DISABLED"
 }
 
 @Serializable

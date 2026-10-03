@@ -1,6 +1,7 @@
 package com.termux.browser
 
 import com.termux.browser.ai.AdapterRegistry
+import com.termux.browser.ai.AiApiRunner
 import com.termux.browser.ai.GenericAdapter
 import com.termux.browser.ai.JsPrompt
 import com.termux.browser.ai.ResponseWaiter
@@ -38,6 +39,12 @@ sealed interface BrowserCommand {
         val maxChars: Int,
         val source: String
     ) : BrowserCommand
+    data class ApiChat(
+        val provider: String,
+        val prompt: String,
+        val maxChars: Int,
+        val source: String
+    ) : BrowserCommand
 }
 
 sealed interface SubmitResult {
@@ -58,6 +65,7 @@ class CommandArbiter(
     private val results: ResultStore,
     private val bus: EventBus = EventBus(),
     private val registry: AdapterRegistry = AdapterRegistry(listOf(GenericAdapter())),
+    private val apiRunner: AiApiRunner? = null,
     private val onWorkChanged: (Boolean) -> Unit = {},
     private val json: Json = Json { ignoreUnknownKeys = true }
 ) {
@@ -128,6 +136,7 @@ class CommandArbiter(
                 is BrowserCommand.Navigate -> executeNavigate(cmd)
                 is BrowserCommand.Read -> executeRead(cmd)
                 is BrowserCommand.AiChat -> executeAiChat(cmd)
+                is BrowserCommand.ApiChat -> executeApiChat(cmd)
             }
         } catch (e: Exception) {
             """{"state":"failed","commandId":"${queued.commandId}","error":"${e.javaClass.simpleName}"}"""
@@ -241,6 +250,15 @@ class CommandArbiter(
         } finally {
             ui.run { runCatching { host.evalJs(JsPrompt.CLEAR_SCRIPT) } }
         }
+    }
+
+    private suspend fun executeApiChat(cmd: BrowserCommand.ApiChat): String {
+        if (cmd.prompt.length > ProtocolLimits.MAX_PROMPT_CHARS) {
+            return failed(ErrorCodes.INVALID_REQUEST)
+        }
+        // No WebView is touched on this path by construction.
+        return apiRunner?.chat(cmd.provider, cmd.prompt, cmd.maxChars)
+            ?: failed(ErrorCodes.INVALID_REQUEST)
     }
 
     private fun failed(code: String): String =
