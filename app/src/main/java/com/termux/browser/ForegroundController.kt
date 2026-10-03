@@ -28,7 +28,11 @@ class ForegroundController {
     }
 
     fun onVisibilityChanged(visible: Boolean): Action {
+        val wasVisible = activityVisible
         activityVisible = visible
+        // Resume always stops the FGS (automation continues); a repeated
+        // visible signal with no transition changes nothing.
+        if (visible && !wasVisible) return Action.StopFgs
         return evaluate()
     }
 

@@ -36,6 +36,7 @@ class SessionNotifier(private val context: Context) {
 
     fun show(stateText: String): Notification {
         ensureChannel()
+        val manager = context.getSystemService(NotificationManager::class.java)
         val open = PendingIntent.getBroadcast(
             context, 1, ControlReceiver.openIntent(context),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
@@ -44,7 +45,7 @@ class SessionNotifier(private val context: Context) {
             context, 2, ControlReceiver.stopIntent(context),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        return Notification.Builder(context, CHANNEL_ID)
+        val notification = Notification.Builder(context, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentTitle("Termux Browser")
             .setContentText(stateText.take(200))
@@ -57,6 +58,10 @@ class SessionNotifier(private val context: Context) {
                 Notification.Action.Builder(null, "Stop", stop).build()
             )
             .build()
+        // Post directly: the same notification object feeds startForeground,
+        // so banner and service always agree.
+        manager?.notify(NOTIFICATION_ID, notification)
+        return notification
     }
 
     fun cancel() {
