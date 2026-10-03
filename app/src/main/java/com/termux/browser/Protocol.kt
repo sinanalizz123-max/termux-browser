@@ -105,5 +105,5 @@ object ProtocolLimits {
     const val MAX_RESULT_BYTES = 256 * 1024
     const val RESULT_TTL_MS = 5 * 60 * 1000L
 
-    val READ_SCOPES = setOf("page", "title", "links", "visible_text", "selection")
+    val READ_SCOPES = setOf("page", "title", "links", "visible_text", "selection", "main_content")
 }

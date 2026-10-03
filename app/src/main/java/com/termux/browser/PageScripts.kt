@@ -14,10 +14,19 @@ object PageScripts {
     const val SELECTION =
         "(function(){return JSON.stringify({text:(window.getSelection?window.getSelection().toString():'')})})()"
 
+    /**
+     * Deterministic readability-style heuristic: prefers article/main
+     * content, falls back to bounded body extraction (native truncation is
+     * authoritative). No network, no waiting, no async DOM dependence.
+     */
+    const val MAIN_CONTENT =
+        "(function(){function t(e){return e?(e.innerText||''):'';}var el=document.querySelector('article')||document.querySelector('main')||document.querySelector('[role=\"main\"]');var s=t(el);if(!s||s.length<200){s=t(document.body);}return JSON.stringify({text:s})})()"
+
     fun forScope(scope: String): String = when (scope) {
         "title" -> TITLE
         "links" -> LINKS
         "selection" -> SELECTION
+        "main_content" -> MAIN_CONTENT
         else -> TEXT
     }
 }

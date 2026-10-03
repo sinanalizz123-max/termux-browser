@@ -1,12 +1,16 @@
 package com.termux.browser
 
+import android.os.Looper
 import android.os.SystemClock
 import android.view.MotionEvent
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import org.robolectric.Shadows.shadowOf
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
@@ -67,6 +71,33 @@ class BrowserActivityTest {
         val recreated = controller.recreate().get()
 
         assertTrue(recreated.statusView.text.contains("example.com"))
+    }
+
+    @Test
+    fun `read title through the real controller path stores a result`() = runBlocking {
+        val activity = startActivity()
+        val results = ResultStore()
+        val ui = object : UiRunner {
+            override suspend fun <T> run(block: suspend () -> T): T = block()
+        }
+        val arbiter = CommandArbiter(
+            this, ui, activity, activity.controller, ControlPolicy(), results
+        )
+        try {
+            val submitted = arbiter.submit(BrowserCommand.Read("title", 100))
+            val id = (submitted as SubmitResult.Accepted).commandId
+            var stored: StoredResult? = null
+            val deadline = System.currentTimeMillis() + 15000
+            while (stored == null && System.currentTimeMillis() < deadline) {
+                shadowOf(Looper.getMainLooper()).idle()
+                delay(100)
+                stored = results.get(id)
+            }
+            assertTrue(stored != null)
+            assertTrue(stored!!.body.contains("\"scope\":\"title\""))
+        } finally {
+            arbiter.close()
+        }
     }
 
     @Test

@@ -58,7 +58,7 @@ WebSocket event stream. Token in `Authorization: Bearer`, never in URLs.
 
 ## Read scopes
 
-`page | title | links | visible_text | selection`, each with `maxChars`
+`page | title | links | visible_text | selection | main_content`, each with `maxChars`
 (default 20000). Links return `{text, href, visible}`.
 
 ## URL policy

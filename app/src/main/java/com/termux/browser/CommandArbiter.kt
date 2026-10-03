@@ -153,7 +153,7 @@ class CommandArbiter(
             )
             "links" -> ReadResult(
                 scope = cmd.scope,
-                links = parsed?.get("links")?.jsonArray?.mapNotNull { element ->
+                links = parsed?.get("links")?.jsonArray?.take(500)?.mapNotNull { element ->
                     runCatching {
                         val obj = element.jsonObject
                         LinkResult(

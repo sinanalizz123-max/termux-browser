@@ -174,6 +174,97 @@ class CommandArbiterTest {
     }
 
     @Test
+    fun `main_content parses like page text`() = runBlocking {
+        val host = FakeHost().apply { evalResult = """{"text":"article body"}""" }
+        val results = ResultStore()
+        val controller = BrowserController(host, ControlPolicy(), ActivityLog()) {}
+        val arbiter = CommandArbiter(
+            this, ui(), host, controller, ControlPolicy(), results
+        )
+        try {
+            val submitted = arbiter.submit(BrowserCommand.Read("main_content", 100))
+            val id = (submitted as SubmitResult.Accepted).commandId
+            val stored = awaitResult(results, id)
+            assertTrue(stored!!.body.contains("article body"))
+        } finally {
+            arbiter.close()
+        }
+    }
+
+    @Test
+    fun `empty null and malformed extraction never crashes`() = runBlocking {
+        val host = FakeHost()
+        val results = ResultStore()
+        val controller = BrowserController(host, ControlPolicy(), ActivityLog()) {}
+        val arbiter = CommandArbiter(
+            this, ui(), host, controller, ControlPolicy(), results
+        )
+        try {
+            for (raw in listOf(null, "", "{}", "not json{{{", "[]")) {
+                host.evalResult = raw
+                val submitted = arbiter.submit(BrowserCommand.Read("page", 100))
+                val id = (submitted as SubmitResult.Accepted).commandId
+                val stored = awaitResult(results, id)
+                assertTrue(stored!!.body.contains("\"scope\":\"page\""))
+            }
+        } finally {
+            arbiter.close()
+        }
+    }
+
+    @Test
+    fun `huge text truncates at maxChars`() = runBlocking {
+        val host = FakeHost().apply {
+            evalResult = """{"text":"""" + "x".repeat(100000) + """"}"""
+        }
+        val results = ResultStore()
+        val controller = BrowserController(host, ControlPolicy(), ActivityLog()) {}
+        val arbiter = CommandArbiter(
+            this, ui(), host, controller, ControlPolicy(), results
+        )
+        try {
+            val submitted = arbiter.submit(BrowserCommand.Read("page", 100))
+            val id = (submitted as SubmitResult.Accepted).commandId
+            val stored = awaitResult(results, id)
+            assertTrue(stored!!.body.contains("\"truncated\":true"))
+            assertFalse(stored.body.contains("x".repeat(1000)))
+        } finally {
+            arbiter.close()
+        }
+    }
+
+    @Test
+    fun `links are capped and bounded`() = runBlocking {
+        val raw = buildString {
+            append("""{"links":[""")
+            repeat(600) { i ->
+                if (i > 0) append(',')
+                append(
+                    """{"text":"""" + "t".repeat(300) + "$i" +
+                        """","href":"https://example.com/""" + "p".repeat(3000) + "$i" +
+                        """","visible":true}"""
+                )
+            }
+            append("]}")
+        }
+        val host = FakeHost().apply { evalResult = raw }
+        val results = ResultStore()
+        val controller = BrowserController(host, ControlPolicy(), ActivityLog()) {}
+        val arbiter = CommandArbiter(
+            this, ui(), host, controller, ControlPolicy(), results
+        )
+        try {
+            val submitted = arbiter.submit(BrowserCommand.Read("links", 50000))
+            val id = (submitted as SubmitResult.Accepted).commandId
+            val stored = awaitResult(results, id)
+            assertEquals(500, "\"href\"".toRegex().findAll(stored!!.body).count())
+            assertFalse(stored.body.contains("p".repeat(3000)))
+        } finally {
+            arbiter.close()
+        }
+    }
+
+    @Test
     fun `full queue answers queue-full`() = runBlocking {
         val host = FakeHost()
         val policy = ControlPolicy()
