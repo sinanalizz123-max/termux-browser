@@ -1,5 +1,6 @@
 package com.termux.browser
 
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -46,23 +47,23 @@ class EventBusTest {
         bus.publish("before-1")
         bus.publish("before-2")
         val received = mutableListOf<BusEvent>()
-        withTimeout(5000) {
-            val job = launch {
+        val done = CompletableDeferred<Unit>()
+        val job = launch {
+            // Completion is signalled, never thrown: escaping exceptions
+            // would propagate through structured concurrency.
+            runCatching {
                 bus.stream(0) { event ->
                     received.add(event)
-                    if (received.size >= 2) throw StreamDone()
+                    if (received.size >= 2) done.complete(Unit)
                 }
             }
-            // Give the stream a moment to snapshot, then publish live events.
-            delay(200)
-            bus.publish("live-1")
-            bus.publish("live-2")
-            try {
-                job.join()
-            } catch (_: StreamDone) {
-                job.cancel()
-            }
         }
+        // Give the stream a moment to snapshot, then publish live events.
+        delay(200)
+        bus.publish("live-1")
+        bus.publish("live-2")
+        withTimeout(5000) { done.await() }
+        job.cancel()
         // since=0: no replay; only the two live events, exactly once each.
         assertEquals(listOf("live-1", "live-2"), received.map { it.type })
     }
@@ -73,21 +74,19 @@ class EventBusTest {
         bus.publish("older")
         val second = bus.publish("old")
         val received = mutableListOf<BusEvent>()
-        withTimeout(5000) {
-            val job = launch {
+        val done = CompletableDeferred<Unit>()
+        val job = launch {
+            runCatching {
                 bus.stream(second.eventId - 1) { event ->
                     received.add(event)
-                    if (received.size >= 2) throw StreamDone()
+                    if (received.size >= 2) done.complete(Unit)
                 }
             }
-            delay(200)
-            bus.publish("new")
-            try {
-                job.join()
-            } catch (_: StreamDone) {
-                job.cancel()
-            }
         }
+        delay(200)
+        bus.publish("new")
+        withTimeout(5000) { done.await() }
+        job.cancel()
         assertEquals(listOf("old", "new"), received.map { it.type })
     }
 
@@ -103,6 +102,4 @@ class EventBusTest {
         val tail = bus.replaySince(999)
         assertTrue(tail.events.size <= 300)
     }
-
-    private class StreamDone : RuntimeException()
 }

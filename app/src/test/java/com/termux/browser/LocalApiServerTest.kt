@@ -64,15 +64,18 @@ class LocalApiServerTest {
         val log = ActivityLog()
         val results = ResultStore()
         val host = FakeHost()
-        val controller = BrowserController(host, policy, log, announce = {})
-        scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        // One shared bus: publishers and the stream must observe the same bus.
+        val bus = EventBus()
+        val controller = BrowserController(host, policy, log, announce = {}, bus = bus)
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
         val ui = object : UiRunner {
             override suspend fun <T> run(block: suspend () -> T): T = block()
         }
-        arbiter = CommandArbiter(scope, ui, host, controller, policy, results)
+        arbiter = CommandArbiter(scope, ui, host, controller, policy, results, bus)
         server = LocalApiServer(
             token, ui, arbiter, policy, log, results,
-            statusProvider = { StatusBody(state = policy.state.name) }
+            statusProvider = { StatusBody(state = policy.state.name) },
+            bus = bus
         )
         port = runBlocking { server.start() }
     }
@@ -137,7 +140,9 @@ class LocalApiServerTest {
     }
 
     @Test
-    fun `websocket rejects missing token`() {
+    fun `websocket route rejects non-upgrade http`() {
+        // Without Upgrade headers Ktor answers 400/401 before any handler
+        // runs; this pins the unauthenticated boundary at the HTTP layer.
         val socket = java.net.Socket("127.0.0.1", port)
         socket.soTimeout = 10000
         try {
@@ -150,9 +155,32 @@ class LocalApiServerTest {
             )
             out.flush()
             val statusLine = socket.getInputStream().bufferedReader().readLine() ?: ""
-            assertTrue(statusLine.contains("401"))
+            assertTrue(
+                "expected HTTP rejection, got: $statusLine",
+                statusLine.contains(" 400 ") || statusLine.contains(" 401 ")
+            )
         } finally {
             socket.close()
+        }
+    }
+
+    @Test
+    fun `websocket closes unauthenticated handshake with 4401`() = runBlocking {
+        val client = HttpClient(CIO) { install(WebSockets) }
+        try {
+            withTimeout(15000) {
+                client.webSocket(
+                    host = "127.0.0.1",
+                    port = port,
+                    path = "/v1/events?since=0"
+                ) {
+                    val frame = incoming.receive()
+                    assertTrue(frame is Frame.Close)
+                    assertEquals(4401, (frame as Frame.Close).code.toInt())
+                }
+            }
+        } finally {
+            client.close()
         }
     }
 
