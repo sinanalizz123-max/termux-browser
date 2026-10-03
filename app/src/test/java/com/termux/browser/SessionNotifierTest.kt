@@ -1,5 +1,6 @@
 package com.termux.browser
 
+import android.app.Notification
 import android.app.NotificationManager
 import android.content.Context
 import org.junit.Assert.assertEquals
