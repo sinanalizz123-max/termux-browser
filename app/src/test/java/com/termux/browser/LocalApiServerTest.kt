@@ -6,6 +6,7 @@ import io.ktor.client.plugins.websocket.webSocket
 import io.ktor.client.plugins.websocket.WebSockets
 import io.ktor.client.request.header
 import io.ktor.websocket.Frame
+import io.ktor.websocket.readReason
 import io.ktor.websocket.readText
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -176,7 +177,7 @@ class LocalApiServerTest {
                 ) {
                     val frame = incoming.receive()
                     assertTrue(frame is Frame.Close)
-                    assertEquals(4401, (frame as Frame.Close).code.toInt())
+                    assertEquals(4401, (frame as Frame.Close).readReason()?.code?.toInt())
                 }
             }
         } finally {
