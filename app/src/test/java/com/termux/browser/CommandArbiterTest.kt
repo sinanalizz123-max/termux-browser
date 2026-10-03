@@ -301,7 +301,7 @@ class CommandArbiterTest {
             )
             val id = (submitted as SubmitResult.Accepted).commandId
             val stored = awaitResult(results, id)
-            assertTrue(stored.body.contains("INVALID_REQUEST"))
+            assertTrue(stored!!.body.contains("INVALID_REQUEST"))
             assertTrue(host.url == null)
         } finally {
             arbiter.close()
@@ -342,7 +342,7 @@ class CommandArbiterTest {
             )
             val id = (submitted as SubmitResult.Accepted).commandId
             val stored = awaitResult(results, id)
-            assertTrue(stored.body.contains("completed"))
+            assertTrue(stored!!.body.contains("completed"))
             assertTrue(stored.body.contains("api answer"))
             assertTrue(host.url == null)
         } finally {
