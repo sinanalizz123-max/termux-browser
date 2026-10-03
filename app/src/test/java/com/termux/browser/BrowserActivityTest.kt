@@ -142,6 +142,22 @@ class BrowserActivityTest {
     }
 
     @Test
+    fun `content respects system bar insets`() {
+        val activity = startActivity()
+        val insets = androidx.core.view.WindowInsetsCompat.Builder()
+            .setInsets(
+                androidx.core.view.WindowInsetsCompat.Type.systemBars(),
+                androidx.core.graphics.Insets.of(0, 60, 0, 40)
+            )
+            .build()
+        androidx.core.view.ViewCompat.dispatchApplyWindowInsets(
+            activity.contentView, insets
+        )
+        assertEquals(60, activity.contentView.paddingTop)
+        assertEquals(40, activity.contentView.paddingBottom)
+    }
+
+    @Test
     fun `touch announces user browsing in the status banner`() {
         val activity = startActivity()
         val now = SystemClock.uptimeMillis()

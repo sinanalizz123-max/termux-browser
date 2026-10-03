@@ -51,6 +51,7 @@ class BrowserActivity : Activity(), PageHost {
     internal lateinit var webView: WebView
     internal lateinit var drawerLayout: androidx.drawerlayout.widget.DrawerLayout
     internal lateinit var menuButton: Button
+    internal lateinit var contentView: LinearLayout
     private lateinit var urlInput: EditText
     private lateinit var logView: TextView
     private lateinit var progressBar: ProgressBar
@@ -105,8 +106,19 @@ class BrowserActivity : Activity(), PageHost {
         drawerLayout = androidx.drawerlayout.widget.DrawerLayout(this)
 
         // ---- Main content: top bar, nav row, status, progress, page ----
+        // Padded for the system status/navigation bars so they never
+        // overlap the browser (edge-to-edge is enforced on target 35+).
+        // The drawer itself stays full-bleed, which is standard.
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
+        }
+        contentView = content
+        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(content) { view, insets ->
+            val bars = insets.getInsets(
+                androidx.core.view.WindowInsetsCompat.Type.systemBars()
+            )
+            view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+            insets
         }
         val topBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
