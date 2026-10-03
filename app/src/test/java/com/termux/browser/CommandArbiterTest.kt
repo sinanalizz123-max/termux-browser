@@ -234,16 +234,12 @@ class CommandArbiterTest {
     }
 
     @Test
-    fun `links are capped and bounded`() = runBlocking {
+    fun `links are capped at 500`() = runBlocking {
         val raw = buildString {
             append("""{"links":[""")
             repeat(600) { i ->
                 if (i > 0) append(',')
-                append(
-                    """{"text":"""" + "t".repeat(300) + "$i" +
-                        """","href":"https://example.com/""" + "p".repeat(3000) + "$i" +
-                        """","visible":true}"""
-                )
+                append("""{"text":"t$i","href":"https://example.com/$i","visible":true}""")
             }
             append("]}")
         }
@@ -258,6 +254,28 @@ class CommandArbiterTest {
             val id = (submitted as SubmitResult.Accepted).commandId
             val stored = awaitResult(results, id)
             assertEquals(500, "\"href\"".toRegex().findAll(stored!!.body).count())
+        } finally {
+            arbiter.close()
+        }
+    }
+
+    @Test
+    fun `per-link text and href are bounded`() = runBlocking {
+        val raw = """{"links":[{"text":"""" + "t".repeat(300) +
+            """","href":"https://example.com/""" + "p".repeat(3000) +
+            """","visible":true}]}"""
+        val host = FakeHost().apply { evalResult = raw }
+        val results = ResultStore()
+        val controller = BrowserController(host, ControlPolicy(), ActivityLog()) {}
+        val arbiter = CommandArbiter(
+            this, ui(), host, controller, ControlPolicy(), results
+        )
+        try {
+            val submitted = arbiter.submit(BrowserCommand.Read("links", 50000))
+            val id = (submitted as SubmitResult.Accepted).commandId
+            val stored = awaitResult(results, id)
+            assertTrue(stored!!.body.contains("t".repeat(200)))
+            assertFalse(stored.body.contains("t".repeat(201)))
             assertFalse(stored.body.contains("p".repeat(3000)))
         } finally {
             arbiter.close()

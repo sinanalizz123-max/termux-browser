@@ -6,6 +6,7 @@ import android.view.MotionEvent
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -74,7 +75,10 @@ class BrowserActivityTest {
     }
 
     @Test
-    fun `read title through the real controller path stores a result`() = runBlocking {
+    fun `open through the real controller path loads the webview`() = runBlocking {
+        // Robolectric never resolves real WebView JavaScript, so the
+        // activity-level path is verified with open (no JS needed): arbiter
+        // -> controller -> activity PageHost -> real WebView URL state.
         val activity = startActivity()
         val results = ResultStore()
         val ui = object : UiRunner {
@@ -84,7 +88,7 @@ class BrowserActivityTest {
             this, ui, activity, activity.controller, ControlPolicy(), results
         )
         try {
-            val submitted = arbiter.submit(BrowserCommand.Read("title", 100))
+            val submitted = arbiter.submit(BrowserCommand.Open("https://example.com", "termux"))
             val id = (submitted as SubmitResult.Accepted).commandId
             var stored: StoredResult? = null
             val deadline = System.currentTimeMillis() + 15000
@@ -94,7 +98,8 @@ class BrowserActivityTest {
                 stored = results.get(id)
             }
             assertTrue(stored != null)
-            assertTrue(stored!!.body.contains("\"scope\":\"title\""))
+            assertTrue(stored!!.body.contains("completed"))
+            assertEquals("https://example.com", activity.webView.url)
         } finally {
             arbiter.close()
         }
