@@ -142,23 +142,20 @@ class LocalApiServerTest {
 
     @Test
     fun `websocket route rejects non-upgrade http`() {
-        // Without Upgrade headers Ktor answers 400/401 before any handler
-        // runs; this pins the unauthenticated boundary at the HTTP layer.
+        // Without Upgrade headers Ktor answers 400 before any handler runs;
+        // this pins the unauthenticated boundary at the HTTP layer.
         val socket = java.net.Socket("127.0.0.1", port)
         socket.soTimeout = 10000
         try {
             val out = socket.getOutputStream()
             out.write(
-                ("GET /v1/events HTTP/1.1\r\nHost: 127.0.0.1:$port\r\n" +
-                    "Upgrade: websocket\r\nConnection: Upgrade\r\n" +
-                    "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n" +
-                    "Sec-WebSocket-Version: 13\r\n\r\n").toByteArray()
+                ("GET /v1/events HTTP/1.1\r\nHost: 127.0.0.1:$port\r\n\r\n").toByteArray()
             )
             out.flush()
-            val statusLine = socket.getInputStream().bufferedReader().readLine() ?: ""
+            val statusLine = readLineRaw(socket.getInputStream())
             assertTrue(
                 "expected HTTP rejection, got: $statusLine",
-                statusLine.contains(" 400 ") || statusLine.contains(" 401 ")
+                statusLine.contains(" 400 ")
             )
         } finally {
             socket.close()
@@ -166,22 +163,66 @@ class LocalApiServerTest {
     }
 
     @Test
-    fun `websocket closes unauthenticated handshake with 4401`() = runBlocking {
-        val client = HttpClient(CIO) { install(WebSockets) }
+    fun `websocket closes unauthenticated handshake with policy violation`() {
+        // Raw handshake WITH upgrade headers but WITHOUT a token: expect
+        // 101 followed by a close frame carrying code 1008, parsed byte-wise.
+        val socket = java.net.Socket("127.0.0.1", port)
+        socket.soTimeout = 10000
         try {
-            withTimeout(15000) {
-                client.webSocket(
-                    host = "127.0.0.1",
-                    port = port,
-                    path = "/v1/events?since=0"
-                ) {
-                    val frame = incoming.receive()
-                    assertTrue(frame is Frame.Close)
-                    assertEquals(4401, (frame as Frame.Close).readReason()?.code?.toInt())
-                }
+            val out = socket.getOutputStream()
+            out.write(
+                ("GET /v1/events?since=0 HTTP/1.1\r\nHost: 127.0.0.1:$port\r\n" +
+                    "Upgrade: websocket\r\nConnection: Upgrade\r\n" +
+                    "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n" +
+                    "Sec-WebSocket-Version: 13\r\n\r\n").toByteArray()
+            )
+            out.flush()
+            val input = socket.getInputStream()
+            val statusLine = readLineRaw(input)
+            assertTrue("expected 101, got: $statusLine", statusLine.contains(" 101 "))
+            var line: String
+            do {
+                line = readLineRaw(input)
+            } while (line.isNotEmpty())
+            val header = ByteArray(2)
+            readFully(input, header)
+            val opcode = header[0].toInt() and 0x0F
+            assertEquals("expected close frame", 0x08, opcode)
+            var length = header[1].toInt() and 0x7F
+            if (length == 126) {
+                val extended = ByteArray(2)
+                readFully(input, extended)
+                length = ((extended[0].toInt() and 0xFF) shl 8) or
+                    (extended[1].toInt() and 0xFF)
             }
+            assertTrue("close payload holds a 2-byte code", length >= 2)
+            val payload = ByteArray(length)
+            readFully(input, payload)
+            val code = ((payload[0].toInt() and 0xFF) shl 8) or
+                (payload[1].toInt() and 0xFF)
+            assertEquals(1008, code)
         } finally {
-            client.close()
+            socket.close()
+        }
+    }
+
+    private fun readLineRaw(input: java.io.InputStream): String {
+        // Byte-wise on purpose: BufferedReader would swallow frame bytes.
+        val sb = StringBuilder()
+        while (true) {
+            val byte = input.read()
+            if (byte < 0 || byte == '\n'.code) break
+            if (byte != '\r'.code) sb.append(byte.toChar())
+        }
+        return sb.toString()
+    }
+
+    private fun readFully(input: java.io.InputStream, buffer: ByteArray) {
+        var offset = 0
+        while (offset < buffer.size) {
+            val read = input.read(buffer, offset, buffer.size - offset)
+            if (read < 0) throw java.io.EOFException("stream ended early")
+            offset += read
         }
     }
 

@@ -345,7 +345,8 @@ class LocalApiServer(
     private suspend fun DefaultWebSocketServerSession.handleEvents() {
         val auth = call.request.header("Authorization")
         if (!RequestValidator.checkBearer(auth, token)) {
-            close(CloseReason(4401, "bearer required"))
+            // 1008 Policy Violation: standard code, no custom-code interop risk.
+            close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "bearer required"))
             return
         }
         val since = call.request.queryParameters["since"]?.toLongOrNull() ?: 0L
