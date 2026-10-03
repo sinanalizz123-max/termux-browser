@@ -67,7 +67,13 @@ class LocalApiServer(
     private val bus: EventBus = EventBus(),
     private val debugLog: ActivityLog = ActivityLog(),
     private val reportProvider: suspend () -> DebugReport = { DebugReport() },
-    private val json: Json = Json { ignoreUnknownKeys = true; explicitNulls = false }
+    private val json: Json = Json {
+        ignoreUnknownKeys = true
+        explicitNulls = false
+        // Explicit: default-valued fields must still serialize. Never rely
+        // on the implicit default here after observing dropped fields.
+        encodeDefaults = true
+    }
 ) {
     private var engine: EmbeddedServer<*, *>? = null
     var port: Int = -1
@@ -406,8 +412,19 @@ class LocalApiServer(
     private suspend fun RoutingContext.handleDebugReport() {
         if (!authorized()) return
         val report = ui.run { reportProvider() }
-        val body = report.copy(envelope = envelope())
-        call.respondText(json.encodeToString(body), ContentType.Application.Json)
+        // Manual JSON like /v1/activity: every field always present, so a
+        // serializer configuration can never silently drop report fields.
+        val lastCrash = report.lastCrash?.let { json.encodeToString(it) } ?: "null"
+        val body = """{"envelope":${json.encodeToString(envelope())},""" +
+            """"uptimeMs":${report.uptimeMs},""" +
+            """"pendingCommands":${report.pendingCommands},""" +
+            """"controlState":${json.encodeToString(report.controlState)},""" +
+            """"generationId":${report.generationId},""" +
+            """"webViewVersion":${json.encodeToString(report.webViewVersion)},""" +
+            """"heapUsedMb":${report.heapUsedMb},""" +
+            """"heapMaxMb":${report.heapMaxMb},""" +
+            """"lastCrash":$lastCrash}"""
+        call.respondText(body, ContentType.Application.Json)
     }
 
     /**
