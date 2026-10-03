@@ -209,6 +209,9 @@ class BrowserActivity : Activity(), PageHost {
         activityScope.launch {
             val started = runCatching { api.start() }
             if (started.isFailure) {
+                // Non-destructive: token untouched, no ready advertisement.
+                // Control returns on next activity creation once free.
+                server = null
                 announce("Termux control unavailable: localhost port busy.")
             }
         }
@@ -378,6 +381,14 @@ class BrowserActivity : Activity(), PageHost {
      * print it to stdout.
      */
     private fun showPairing() {
+        if ((server?.port ?: -1) < 0) {
+            AlertDialog.Builder(this)
+                .setTitle("Pair Termux")
+                .setMessage("Control server is not running (localhost port busy). Close the conflicting app and reopen this one.")
+                .setPositiveButton("Close", null)
+                .show()
+            return
+        }
         if (android.os.Build.VERSION.SDK_INT >= 33 &&
             checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) !=
             android.content.pm.PackageManager.PERMISSION_GRANTED

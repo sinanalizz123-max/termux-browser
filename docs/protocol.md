@@ -8,6 +8,12 @@ Pair-once model: the port never changes and the bearer token persists in
 app storage, so Termux pairs a single time. If the app is killed, just
 reopen it — no re-pairing. Ephemeral ports are used only in tests.
 
+Tradeoff: the fixed port is part of the local control interface. Another
+local process can occupy 8765, in which case the control server stays
+unavailable (loud port-busy state, token untouched, no silent fallback)
+until the conflict is resolved. Port discovery alone grants nothing: every
+route, including WebSocket upgrade, requires the bearer token.
+
 ## Envelope
 
 ```json

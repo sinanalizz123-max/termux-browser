@@ -260,6 +260,53 @@ class LocalApiServerTest {
     }
 
     @Test
+    fun `every route requires authentication`() {
+        fun codeOf(method: String, path: String, body: String? = null): Int {
+            val connection =
+                URL("http://127.0.0.1:$port/v1$path").openConnection() as HttpURLConnection
+            connection.requestMethod = method
+            connection.connectTimeout = 10000
+            connection.readTimeout = 10000
+            if (body != null) {
+                connection.doOutput = true
+                connection.setRequestProperty("Content-Type", "application/json")
+                connection.outputStream.use { it.write(body.toByteArray()) }
+            }
+            return try {
+                connection.responseCode.also {
+                    runCatching { connection.inputStream.close() }
+                    runCatching { connection.errorStream?.close() }
+                }
+            } catch (_: Exception) {
+                -1
+            } finally {
+                connection.disconnect()
+            }
+        }
+        val routes = listOf(
+            "GET" to "/status",
+            "GET" to "/activity",
+            "GET" to "/result/cmd-1",
+            "POST" to "/commands/open",
+            "POST" to "/commands/search",
+            "POST" to "/commands/back",
+            "POST" to "/commands/forward",
+            "POST" to "/commands/reload",
+            "POST" to "/commands/stop",
+            "POST" to "/commands/read",
+            "POST" to "/commands/ai-chat",
+            "POST" to "/commands/api-chat",
+            "POST" to "/control/pause",
+            "POST" to "/control/resume",
+            "POST" to "/control/stop"
+        )
+        for ((method, path) in routes) {
+            val code = codeOf(method, path, if (method == "POST") "{}" else null)
+            assertEquals("unauthenticated $method $path must be 401", 401, code)
+        }
+    }
+
+    @Test
     fun `rejected urls fail fast`() {
         val (code, body) = post("/commands/open", hex, """{"url":"file:///etc/passwd"}""")
         assertEquals(400, code)
