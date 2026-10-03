@@ -118,12 +118,18 @@ class BrowserActivity : Activity(), PageHost {
         )
         setContentView(root)
 
-        controller = BrowserController(this, policy, log, bus = bus) { message ->
-            runOnUiThread {
-                statusView.text = message
-                refreshLog()
-            }
-        }
+        controller = BrowserController(
+            this,
+            policy,
+            log,
+            announce = { message ->
+                runOnUiThread {
+                    statusView.text = message
+                    refreshLog()
+                }
+            },
+            bus = bus
+        )
 
         configureWebView()
         // Debug builds only: ADB WebView inspection for development.
