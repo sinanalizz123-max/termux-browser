@@ -315,11 +315,12 @@ class LocalApiServerTest {
         assertTrue(consoleBody.contains("\"events\""))
         val (reportCode, reportBody) = get("/debug/report", hex)
         assertEquals(200, reportCode)
-        assertTrue(
-            "report body was: ${reportBody.take(300)}",
-            reportBody.contains("uptimeMs")
-        )
-        assertTrue(reportBody.contains("heapUsedMb"))
+        for (key in listOf("envelope", "uptimeMs", "pendingCommands", "heapUsedMb")) {
+            assertTrue(
+                "missing $key in body: ${reportBody.take(300)}",
+                reportBody.contains(key)
+            )
+        }
     }
 
     @Test
