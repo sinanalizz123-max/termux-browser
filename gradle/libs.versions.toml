@@ -1,5 +1,5 @@
 [versions]
-agp = "8.11.1"
+agp = "9.4.1"
 kotlin = "2.2.20"
 webkit = "1.10.0"
 junit4 = "4.13.2"
