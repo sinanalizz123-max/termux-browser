@@ -6,10 +6,12 @@ on:
   pull_request:
   workflow_dispatch:
 
-# Any failure fails the workflow: assemble, unit tests, and lint are all gates.
+# Three INDEPENDENT jobs on purpose: assemble, unit tests, and lint run in
+# parallel so wall time is the slowest lane, not the sum. Any failure fails
+# the workflow. Only the build job uploads the debug APK.
 jobs:
-  debug:
-    name: Debug APK + unit tests + lint
+  build:
+    name: Assemble debug + APK
     runs-on: ubuntu-latest
     timeout-minutes: 50
     steps:
@@ -23,19 +25,20 @@ jobs:
           java-version: '21'
           cache: gradle
 
+      - name: Restore Gradle build cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.gradle/caches/build-cache-*
+          key: gradle-build-cache-${{ hashFiles('**/*.gradle.kts', 'gradle/wrapper/gradle-wrapper.properties', 'gradle/libs.versions.toml') }}
+          restore-keys: gradle-build-cache-
+
       - name: Accept licenses and install platform
         run: |
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;36.0.0"
 
       - name: Assemble debug
-        run: chmod +x gradlew && ./gradlew :app:assembleDebug --console=plain
-
-      - name: Unit tests
-        run: ./gradlew :app:testDebugUnitTest --console=plain
-
-      - name: Lint
-        run: ./gradlew :app:lintDebug --console=plain
+        run: chmod +x gradlew && ./gradlew :app:assembleDebug --console=plain --max-workers 4
 
       - name: Upload debug APK
         if: always()
@@ -44,3 +47,63 @@ jobs:
           name: termux-browser-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+
+  test:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+
+      - name: Restore Gradle build cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.gradle/caches/build-cache-*
+          key: gradle-build-cache-${{ hashFiles('**/*.gradle.kts', 'gradle/wrapper/gradle-wrapper.properties', 'gradle/libs.versions.toml') }}
+          restore-keys: gradle-build-cache-
+
+      - name: Accept licenses and install platform
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;36.0.0"
+
+      - name: Unit tests
+        run: chmod +x gradlew && ./gradlew :app:testDebugUnitTest --console=plain --max-workers 4
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+
+      - name: Restore Gradle build cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.gradle/caches/build-cache-*
+          key: gradle-build-cache-${{ hashFiles('**/*.gradle.kts', 'gradle/wrapper/gradle-wrapper.properties', 'gradle/libs.versions.toml') }}
+          restore-keys: gradle-build-cache-
+
+      - name: Accept licenses and install platform
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;36.0.0"
+
+      - name: Lint
+        run: chmod +x gradlew && ./gradlew :app:lintDebug --console=plain --max-workers 4
