@@ -116,7 +116,9 @@ class BrowserActivity : Activity(), PageHost {
         if (savedInstanceState != null) {
             policy.restore(
                 savedInstanceState.getInt(KEY_GENERATION),
-                ControlState.valueOf(savedInstanceState.getString(KEY_STATE))
+                ControlState.valueOf(
+                    savedInstanceState.getString(KEY_STATE) ?: ControlState.IDLE.name
+                )
             )
             savedInstanceState.getString(KEY_URL)?.let {
                 controller.open(it, "system-restore")
