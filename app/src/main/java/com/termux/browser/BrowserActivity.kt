@@ -41,7 +41,7 @@ class BrowserActivity : Activity(), PageHost {
     private val log = ActivityLog()
     private val activityScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val uiRunner = object : UiRunner {
-        override suspend fun <T> run(block: () -> T): T =
+        override suspend fun <T> run(block: suspend () -> T): T =
             withContext(Dispatchers.Main) { block() }
     }
     private val results = ResultStore()
@@ -141,9 +141,10 @@ class BrowserActivity : Activity(), PageHost {
         }.getOrDefault("unknown")
         arbiter = CommandArbiter(activityScope, uiRunner, this, controller, policy, results)
         apiToken = TokenStore(filesDir).getOrCreate()
-        val api = LocalApiServer(apiToken, uiRunner, arbiter, policy, log, results) {
-            currentStatus()
-        }
+        val api = LocalApiServer(
+            apiToken, uiRunner, arbiter, policy, log, results,
+            statusProvider = { currentStatus() }
+        )
         server = api
         activityScope.launch { runCatching { api.start() } }
         if (savedInstanceState != null) {

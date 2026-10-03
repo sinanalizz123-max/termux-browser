@@ -24,7 +24,7 @@ class CommandArbiterTest {
     }
 
     private fun ui(): UiRunner = object : UiRunner {
-        override suspend fun <T> run(block: () -> T): T = block()
+        override suspend fun <T> run(block: suspend () -> T): T = block()
     }
 
     private suspend fun awaitResult(

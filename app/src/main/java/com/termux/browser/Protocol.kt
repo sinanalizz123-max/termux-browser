@@ -50,7 +50,7 @@ object ErrorCodes {
 
 @Serializable
 data class StatusBody(
-    val envelope: Envelope,
+    val envelope: Envelope? = null,
     val state: String,
     val url: String? = null,
     val title: String? = null,

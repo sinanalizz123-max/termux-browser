@@ -32,7 +32,7 @@ sealed interface SubmitResult {
 }
 
 interface UiRunner {
-    suspend fun <T> run(block: () -> T): T
+    suspend fun <T> run(block: suspend () -> T): T
 }
 
 class CommandArbiter(
