@@ -5,6 +5,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:allowBackup="false"
@@ -20,5 +23,26 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <!-- M6: automation foreground service. specialUse documents the
+            user-visible automation session; started only during the
+            foreground-to-background transition while automation executes. -->
+        <service
+            android:name=".AutomationService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="User-visible browser automation session with on-screen stop controls." />
+        </service>
+        <receiver
+            android:name=".ControlReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.termux.browser.ACTION_PAUSE" />
+                <action android:name="com.termux.browser.ACTION_RESUME" />
+                <action android:name="com.termux.browser.ACTION_STOP" />
+                <action android:name="com.termux.browser.ACTION_OPEN" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

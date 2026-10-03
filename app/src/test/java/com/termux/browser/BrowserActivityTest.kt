@@ -11,10 +11,10 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
-import org.robolectric.Shadows.shadowOf
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.ConscryptMode
 import org.robolectric.annotation.GraphicsMode
@@ -103,6 +103,21 @@ class BrowserActivityTest {
         } finally {
             arbiter.close()
         }
+    }
+
+    @Test
+    fun `background automation starts service, resume stops it`() {
+        val controller = Robolectric.buildActivity(BrowserActivity::class.java).setup()
+        val activity = controller.get()
+        activity.automationActiveOverride = true
+
+        controller.pause()
+        val started = shadowOf(activity.application).nextStartedService
+        assertEquals(AutomationService::class.java.name, started.component?.className)
+
+        controller.resume()
+        val stopped = shadowOf(activity.application).nextStoppedService
+        assertEquals(AutomationService::class.java.name, stopped.component?.className)
     }
 
     @Test

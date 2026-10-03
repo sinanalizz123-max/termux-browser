@@ -43,6 +43,7 @@ class CommandArbiter(
     private val policy: ControlPolicy,
     private val results: ResultStore,
     private val bus: EventBus = EventBus(),
+    private val onWorkChanged: (Boolean) -> Unit = {},
     private val json: Json = Json { ignoreUnknownKeys = true }
 ) {
     data class QueuedCommand(
@@ -59,7 +60,7 @@ class CommandArbiter(
             try {
                 execute(queued)
             } finally {
-                pending.decrementAndGet()
+                if (pending.decrementAndGet() == 0) onWorkChanged(false)
             }
         }
     }
@@ -70,6 +71,7 @@ class CommandArbiter(
         if (!channel.trySend(queued).isSuccess) return SubmitResult.QueueFull
         pending.incrementAndGet()
         bus.publish(EventTypes.COMMAND_QUEUED, commandId = id, state = "queued")
+        onWorkChanged(true)
         return SubmitResult.Accepted(id, queued.generationId)
     }
 
@@ -89,6 +91,7 @@ class CommandArbiter(
             drained = channel.tryReceive()
         }
         ui.run { controller.stop(source) }
+        if (pending.get() == 0) onWorkChanged(false)
     }
 
     fun close() {

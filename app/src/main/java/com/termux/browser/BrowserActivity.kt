@@ -40,6 +40,16 @@ class BrowserActivity : Activity(), PageHost {
     private val policy = ControlPolicy()
     private val log = ActivityLog()
     private val bus = EventBus()
+    private val fgs = ForegroundController()
+    private lateinit var notifier: SessionNotifier
+    private var fgsRunning = false
+    private var notificationShown = false
+
+    /**
+     * Test seam: onPause wiring reads this first so Robolectric can simulate
+     * background automation without real queued work.
+     */
+    internal var automationActiveOverride: Boolean? = null
     private val activityScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val uiRunner = object : UiRunner {
         override suspend fun <T> run(block: suspend () -> T): T =
@@ -154,7 +164,11 @@ class BrowserActivity : Activity(), PageHost {
         webViewVersion = runCatching {
             WebViewCompat.getCurrentWebViewPackage(this)?.versionName ?: "unknown"
         }.getOrDefault("unknown")
-        arbiter = CommandArbiter(activityScope, uiRunner, this, controller, policy, results, bus)
+        notifier = SessionNotifier(this)
+        arbiter = CommandArbiter(
+            activityScope, uiRunner, this, controller, policy, results, bus,
+            onWorkChanged = { active -> onAutomationWorkChanged(active) }
+        )
         apiToken = TokenStore(filesDir, tokenCryptoOverride ?: KeystoreTokenCrypto())
             .getOrCreate()
         val api = LocalApiServer(
@@ -164,6 +178,7 @@ class BrowserActivity : Activity(), PageHost {
         )
         server = api
         activityScope.launch { runCatching { api.start() } }
+        wireControlPlane()
         if (savedInstanceState != null) {
             policy.restore(
                 savedInstanceState.getInt(KEY_GENERATION),
@@ -208,11 +223,41 @@ class BrowserActivity : Activity(), PageHost {
         webView.reload()
     }
 
+    override fun onStart() {
+        super.onStart()
+        applyFgs(fgs.onVisibilityChanged(true))
+    }
+
+    override fun onResume() {
+        super.onResume()
+        applyFgs(fgs.onVisibilityChanged(true))
+    }
+
+    override fun onPause() {
+        // Foreground-to-background transition: the compliant moment to start
+        // the FGS if automation is active. Never start from fully background.
+        if (automationActiveOverride == true && !fgs.automationActive) {
+            fgs.onAutomationChanged(true)
+        }
+        applyFgs(fgs.onVisibilityChanged(false))
+        super.onPause()
+    }
+
+    override fun onStop() {
+        applyFgs(fgs.onVisibilityChanged(false))
+        super.onStop()
+    }
+
     override fun onDestroy() {
         activityScope.cancel()
         runCatching { server?.stop() }
         server = null
         arbiter.close()
+        stopFgsService()
+        notifier.cancel()
+        ControlPlane.onPauseRequested = null
+        ControlPlane.onResumeRequested = null
+        ControlPlane.onStopRequested = null
         (webView.parent as? android.view.ViewGroup)?.removeView(webView)
         webView.destroy()
         super.onDestroy()
@@ -233,6 +278,14 @@ class BrowserActivity : Activity(), PageHost {
      * print it to stdout.
      */
     private fun showPairing() {
+        if (android.os.Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) !=
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(
+                arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 41
+            )
+        }
         val port = server?.port ?: -1
         val details = TextView(this).apply {
             text = "Host: 127.0.0.1:$port\n\nToken (copy once into Termux):\n" +
@@ -266,6 +319,59 @@ class BrowserActivity : Activity(), PageHost {
     private fun announce(message: String) {
         statusView.text = message
         refreshLog()
+        if (notificationShown) {
+            notifier.show(message)
+        }
+    }
+
+    private fun onAutomationWorkChanged(active: Boolean) {
+        if (active) {
+            notifier.show("Termux automation active")
+            notificationShown = true
+        } else {
+            notifier.cancel()
+            notificationShown = false
+        }
+        applyFgs(fgs.onAutomationChanged(active))
+    }
+
+    private fun applyFgs(action: ForegroundController.Action) {
+        when (action) {
+            is ForegroundController.Action.StartFgs -> startFgsService()
+            is ForegroundController.Action.StopFgs -> stopFgsService()
+            is ForegroundController.Action.None -> Unit
+        }
+    }
+
+    private fun startFgsService() {
+        if (fgsRunning) return
+        val intent = android.content.Intent(this, AutomationService::class.java).apply {
+            putExtra(AutomationService.EXTRA_STATE, statusView.text.toString())
+        }
+        runCatching { startForegroundService(intent) }
+        fgsRunning = true
+    }
+
+    private fun stopFgsService() {
+        if (!fgsRunning) return
+        runCatching {
+            stopService(android.content.Intent(this, AutomationService::class.java))
+        }
+        fgsRunning = false
+    }
+
+    private fun wireControlPlane() {
+        ControlPlane.onPauseRequested = {
+            policy.onPause()
+            announce("Termux control paused.")
+        }
+        ControlPlane.onResumeRequested = {
+            policy.onResume()
+            announce("Termux control resumed.")
+        }
+        ControlPlane.onStopRequested = {
+            activityScope.launch { arbiter.stopNow("notification") }
+        }
     }
 
     private fun refreshLog() {
