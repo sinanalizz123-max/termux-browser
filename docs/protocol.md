@@ -1,0 +1,64 @@
+# Termux Browser protocol v1 (M0)
+
+All control traffic is JSON over `127.0.0.1` on an ephemeral port, plus one
+WebSocket event stream. Token in `Authorization: Bearer`, never in URLs.
+
+## Envelope
+
+```json
+{
+  "protocolVersion": "1",
+  "requestId": "req_...",
+  "commandId": "cmd_...",
+  "generationId": 42
+}
+```
+
+- `requestId`: HTTP-level correlation, always present in responses.
+- `commandId`: automation-operation identifier for mutating commands.
+- `generationId`: session generation; stale callbacks carry an old generation
+  and are discarded.
+
+## Endpoints (M1 implements none yet; reserved)
+
+- `GET /v1/status`
+- `GET /v1/activity?since=<eventId>` — replay from bounded ring buffer
+  (bounded by event count AND approximate bytes).
+- `GET /v1/result/<command-id>`
+- `POST /v1/commands/open|search|back|forward|reload|stop|read`
+- `POST /v1/commands/ai-chat` — reserved in M0/M1, implemented M7+.
+- `POST /v1/control/pause|resume|stop`
+- `WS /v1/events` — live stream; `/v1/activity?since=` is replay, not live.
+
+## Control states
+
+- `AUTOMATION_RUNNING`: a Termux operation owns the WebView.
+- `PAUSED`: commands halted, page untouched, queue preserved.
+- `USER_TAKEOVER`: active automation cancelled, queue preserved for
+  explicit resume. Resume is always explicit, never automatic.
+- `STOPPED`: current op cancelled, queued automation cleared, generation++.
+
+## Error codes
+
+- Transport: `AUTH_REQUIRED`, `INVALID_REQUEST`, `INVALID_URL`,
+  `BODY_TOO_LARGE`, `RATE_LIMITED`, `NOT_FOUND`, `BUSY`, `CANCELLED`.
+- Domain: `LOGIN_REQUIRED`, `CAPTCHA_DETECTED`, `USER_TAKEOVER`,
+  `NAVIGATION_CHANGED`, `TIMEOUT`, `DOM_CHANGED`, `AI_ERROR`.
+
+## Read scopes
+
+`page | title | links | visible_text | selection`, each with `maxChars`
+(default 20000). Links return `{text, href, visible}`.
+
+## URL policy
+
+Termux `open` accepts `http(s)` only. Rejected: `file:`, `content:`,
+`javascript:`, `data:`, `intent:`, `blob:`. Manual entry of unsupported
+schemes shows a user-facing rejection.
+
+## Privacy
+
+- Activity log defaults to ACTION + METADATA (counts, not content).
+- Never exposed via API: cookies, WebView storage, cache, credentials,
+  full page HTML, full AI conversations.
+- No token in logs, notifications, events, shell history, or exceptions.

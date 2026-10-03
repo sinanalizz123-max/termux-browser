@@ -1,0 +1,19 @@
+[versions]
+agp = "8.11.1"
+kotlin = "2.2.20"
+webkit = "1.10.0"
+junit4 = "4.13.2"
+robolectric = "4.17"
+# Reserved for M2 local control plane (pinned together when added).
+ktor = "3.3.0"
+serialization = "1.9.0"
+coroutines = "1.10.2"
+
+[libraries]
+webkit = { group = "androidx.webkit", name = "webkit", version.ref = "webkit" }
+junit = { group = "junit", name = "junit", version.ref = "junit4" }
+robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric" }
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }
+kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
