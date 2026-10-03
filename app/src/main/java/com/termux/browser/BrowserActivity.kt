@@ -52,10 +52,12 @@ class BrowserActivity : Activity(), PageHost {
     private var webViewVersion = "unknown"
 
     /**
-     * Test seam: production always uses the Android Keystore. Robolectric has
-     * no Keystore provider, so tests inject a fake before setup()/onCreate.
+     * Test-only hook: Robolectric has no Android Keystore provider, and this
+     * static survives activity recreation inside tests. Production always
+     * uses the Android Keystore.
      */
     internal var tokenCryptoOverride: TokenCrypto? = null
+        get() = field ?: testCrypto
 
     @SuppressLint("SetJavaScriptEnabled", "ClickableViewAccessibility")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -321,5 +323,12 @@ class BrowserActivity : Activity(), PageHost {
         private const val KEY_URL = "browser_url"
         private const val KEY_GENERATION = "browser_generation"
         private const val KEY_STATE = "browser_state"
+
+        /**
+         * Test-only hook: Robolectric has no Android Keystore provider, and
+         * this static survives activity recreation inside tests. Production
+         * always uses the Android Keystore.
+         */
+        internal var testCrypto: TokenCrypto? = null
     }
 }

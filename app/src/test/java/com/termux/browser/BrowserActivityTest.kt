@@ -1,7 +1,9 @@
 package com.termux.browser
 
+import org.junit.After
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
@@ -32,9 +34,17 @@ class BrowserActivityTest {
     }
 
     private fun startActivity() =
-        Robolectric.buildActivity(BrowserActivity::class.java).apply {
-            get().tokenCryptoOverride = XorCrypto()
-        }.setup().get()
+        Robolectric.buildActivity(BrowserActivity::class.java).setup().get()
+
+    @Before
+    fun setUp() {
+        BrowserActivity.testCrypto = XorCrypto()
+    }
+
+    @After
+    fun tearDown() {
+        BrowserActivity.testCrypto = null
+    }
 
     @Test
     fun `secure webview baseline is configured`() {
@@ -48,9 +58,7 @@ class BrowserActivityTest {
 
     @Test
     fun `recreation restores the visible page`() {
-        val controller = Robolectric.buildActivity(BrowserActivity::class.java).apply {
-            get().tokenCryptoOverride = XorCrypto()
-        }.setup()
+        val controller = Robolectric.buildActivity(BrowserActivity::class.java).setup()
         val activity = controller.get()
         activity.controller.open("https://example.com", "user")
 
