@@ -51,6 +51,12 @@ class BrowserActivity : Activity(), PageHost {
     private var pageLoading = false
     private var webViewVersion = "unknown"
 
+    /**
+     * Test seam: production always uses the Android Keystore. Robolectric has
+     * no Keystore provider, so tests inject a fake before setup()/onCreate.
+     */
+    internal var tokenCryptoOverride: TokenCrypto? = null
+
     @SuppressLint("SetJavaScriptEnabled", "ClickableViewAccessibility")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -140,7 +146,8 @@ class BrowserActivity : Activity(), PageHost {
             WebViewCompat.getCurrentWebViewPackage(this)?.versionName ?: "unknown"
         }.getOrDefault("unknown")
         arbiter = CommandArbiter(activityScope, uiRunner, this, controller, policy, results)
-        apiToken = TokenStore(filesDir).getOrCreate()
+        apiToken = TokenStore(filesDir, tokenCryptoOverride ?: KeystoreTokenCrypto())
+            .getOrCreate()
         val api = LocalApiServer(
             apiToken, uiRunner, arbiter, policy, log, results,
             statusProvider = { currentStatus() }

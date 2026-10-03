@@ -22,10 +22,23 @@ import org.robolectric.annotation.LooperMode
 @LooperMode(LooperMode.Mode.LEGACY)
 class BrowserActivityTest {
 
+    /** Robolectric has no Android Keystore provider; activity takes a fake. */
+    private class XorCrypto : TokenCrypto {
+        override fun encrypt(plain: ByteArray): Pair<ByteArray, ByteArray> =
+            ByteArray(12) { 3 } to plain.map { (it.toInt() xor 0x5A).toByte() }.toByteArray()
+
+        override fun decrypt(iv: ByteArray, ciphertext: ByteArray): ByteArray =
+            ciphertext.map { (it.toInt() xor 0x5A).toByte() }.toByteArray()
+    }
+
+    private fun startActivity() =
+        Robolectric.buildActivity(BrowserActivity::class.java).apply {
+            get().tokenCryptoOverride = XorCrypto()
+        }.setup().get()
+
     @Test
     fun `secure webview baseline is configured`() {
-        val activity = Robolectric.buildActivity(BrowserActivity::class.java)
-            .setup().get()
+        val activity = startActivity()
         val settings = activity.webView.settings
         assertTrue(settings.javaScriptEnabled)
         assertTrue(settings.domStorageEnabled)
@@ -35,7 +48,9 @@ class BrowserActivityTest {
 
     @Test
     fun `recreation restores the visible page`() {
-        val controller = Robolectric.buildActivity(BrowserActivity::class.java).setup()
+        val controller = Robolectric.buildActivity(BrowserActivity::class.java).apply {
+            get().tokenCryptoOverride = XorCrypto()
+        }.setup()
         val activity = controller.get()
         activity.controller.open("https://example.com", "user")
 
