@@ -75,15 +75,17 @@ class OpenAiProvider(
         val bound = maxChars.coerceIn(1, 50_000)
         return try {
             withTimeout(timeoutMs) {
+                // Explicit JSON string: no reliance on client plugins.
+                val body = json.encodeToString(
+                    ChatRequest(
+                        model = model,
+                        messages = listOf(ChatMessage("user", prompt))
+                    )
+                )
                 val response = client.post("$baseUrl/chat/completions") {
                     header("Authorization", "Bearer $credential")
                     contentType(ContentType.Application.Json)
-                    setBody(
-                        ChatRequest(
-                            model = model,
-                            messages = listOf(ChatMessage("user", prompt))
-                        )
-                    )
+                    setBody(body)
                 }
                 when (response.status) {
                     HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden ->
