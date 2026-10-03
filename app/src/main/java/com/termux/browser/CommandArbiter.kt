@@ -1,5 +1,13 @@
 package com.termux.browser
 
+import com.termux.browser.ai.AdapterRegistry
+import com.termux.browser.ai.GenericAdapter
+import com.termux.browser.ai.JsPrompt
+import com.termux.browser.ai.ResponseWaiter
+import com.termux.browser.ai.Snapshot
+import com.termux.browser.ai.SnapshotParser
+import com.termux.browser.ai.SnapshotProvider
+import com.termux.browser.ai.WaitResult
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
@@ -24,6 +32,12 @@ sealed interface BrowserCommand {
         enum class Kind { BACK, FORWARD, RELOAD }
     }
     data class Read(val scope: String, val maxChars: Int) : BrowserCommand
+    data class AiChat(
+        val site: String,
+        val prompt: String,
+        val maxChars: Int,
+        val source: String
+    ) : BrowserCommand
 }
 
 sealed interface SubmitResult {
@@ -43,6 +57,7 @@ class CommandArbiter(
     private val policy: ControlPolicy,
     private val results: ResultStore,
     private val bus: EventBus = EventBus(),
+    private val registry: AdapterRegistry = AdapterRegistry(listOf(GenericAdapter())),
     private val onWorkChanged: (Boolean) -> Unit = {},
     private val json: Json = Json { ignoreUnknownKeys = true }
 ) {
@@ -112,6 +127,7 @@ class CommandArbiter(
                 is BrowserCommand.Open -> executeOpen(cmd)
                 is BrowserCommand.Navigate -> executeNavigate(cmd)
                 is BrowserCommand.Read -> executeRead(cmd)
+                is BrowserCommand.AiChat -> executeAiChat(cmd)
             }
         } catch (e: Exception) {
             """{"state":"failed","commandId":"${queued.commandId}","error":"${e.javaClass.simpleName}"}"""
@@ -153,6 +169,78 @@ class CommandArbiter(
         }
         return """{"state":"completed"}"""
     }
+
+    private suspend fun executeAiChat(cmd: BrowserCommand.AiChat): String {
+        // Explicit prompt-size limit before anything touches the page.
+        if (cmd.prompt.length > ProtocolLimits.MAX_PROMPT_CHARS) {
+            return failed(ErrorCodes.INVALID_REQUEST)
+        }
+        val pageUrl = ui.run { host.currentUrl() }
+            ?: return failed(ErrorCodes.INVALID_REQUEST)
+        val adapter = registry.detect(pageUrl)
+        // Fail closed: unknown page or generic fallback never submits.
+        if (adapter == null || adapter.hosts.isEmpty()) {
+            return failed(ErrorCodes.ADAPTER_UNRECOGNIZED)
+        }
+        if (cmd.site.isNotBlank() && adapter.id != cmd.site) {
+            return failed(ErrorCodes.INVALID_REQUEST)
+        }
+        // Health gate on a fresh snapshot: confirmed controls or nothing.
+        val probe = ui.run { host.evalJs(adapter.snapshotScript()) }
+        val health = adapter.health(SnapshotParser.parse(probe) ?: Snapshot(), pageUrl)
+        if (health.loginState == "logged_out") return failed(ErrorCodes.LOGIN_REQUIRED)
+        if (!health.promptInput || !health.submitControl) {
+            return failed(ErrorCodes.ADAPTER_UNRECOGNIZED)
+        }
+        val boundedPrompt = cmd.prompt.take(cmd.maxChars.coerceIn(1, ProtocolLimits.MAX_READ_CHARS))
+        val selectors = adapter.selectors()
+        val submitScript = JsPrompt.submitScript(
+            JsPrompt.quotedPrompt(boundedPrompt),
+            JsPrompt.quotedStringList(selectors.prompt),
+            JsPrompt.quotedStringList(selectors.submit)
+        )
+        val ackRaw = ui.run { host.evalJs(submitScript) }
+        val ack = ackRaw?.let {
+            runCatching { json.parseToJsonElement(it).jsonObject }.getOrNull()
+        }
+        val submitted = ack?.get("submitted")?.jsonPrimitive?.content == "true"
+        if (!submitted) return failed(ErrorCodes.ADAPTER_UNRECOGNIZED)
+
+        val startGen = policy.generation
+        val startUrl = pageUrl
+        val provider = object : SnapshotProvider {
+            override suspend fun snapshot(): Snapshot {
+                val raw = ui.run { host.evalJs(adapter.snapshotScript()) }
+                return SnapshotParser.parse(raw) ?: Snapshot()
+            }
+        }
+        val outcome = ResponseWaiter(
+            snapshots = provider,
+            exited = {
+                ui.run {
+                    when {
+                        policy.state == ControlState.STOPPED -> "CANCELLED"
+                        policy.generation != startGen -> "USER_TAKEOVER"
+                        host.currentUrl() != startUrl -> "NAVIGATION_CHANGED"
+                        else -> null
+                    }
+                }
+            }
+        ).await()
+        // Best-effort prompt cleanup after every outcome.
+        ui.run { runCatching { host.evalJs(JsPrompt.CLEAR_SCRIPT) } }
+        return when (outcome) {
+            is WaitResult.Completed -> {
+                val text = outcome.text.take(cmd.maxChars)
+                val truncated = outcome.text.length > cmd.maxChars
+                """{"state":"completed","text":${json.encodeToString(text)},"truncated":$truncated}"""
+            }
+            is WaitResult.Failed -> failed(outcome.code)
+        }
+    }
+
+    private fun failed(code: String): String =
+        """{"state":"failed","error":"$code"}"""
 
     private suspend fun executeRead(cmd: BrowserCommand.Read): String {
         val raw = ui.run { host.evalJs(PageScripts.forScope(cmd.scope)) }

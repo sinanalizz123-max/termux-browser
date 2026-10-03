@@ -48,6 +48,33 @@ class RequestValidatorTest {
     }
 
     @Test
+    fun `ai-chat requests are bounded`() {
+        assertNull(RequestValidator.checkAiChat("chatgpt", "Summarize this.", 20000))
+        assertEquals(
+            ErrorCodes.INVALID_REQUEST,
+            RequestValidator.checkAiChat("", "Hi.", 20000)
+        )
+        assertEquals(
+            ErrorCodes.INVALID_REQUEST,
+            RequestValidator.checkAiChat("chatgpt", "  ", 20000)
+        )
+        assertEquals(
+            ErrorCodes.INVALID_REQUEST,
+            RequestValidator.checkAiChat(
+                "chatgpt", "x".repeat(ProtocolLimits.MAX_PROMPT_CHARS + 1), 20000
+            )
+        )
+        assertEquals(
+            ErrorCodes.INVALID_REQUEST,
+            RequestValidator.checkAiChat("chatgpt", "Hi.", 0)
+        )
+        assertEquals(
+            ErrorCodes.INVALID_REQUEST,
+            RequestValidator.checkAiChat("x".repeat(65), "Hi.", 20000)
+        )
+    }
+
+    @Test
     fun `bearer check is exact`() {
         val token = ByteArray(32) { it.toByte() }
         val hex = token.joinToString("") { "%02x".format(it) }

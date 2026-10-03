@@ -22,6 +22,17 @@ object RequestValidator {
         return null
     }
 
+    fun checkAiChat(site: String, prompt: String, maxChars: Int): String? {
+        if (site.isBlank() || site.length > 64) return ErrorCodes.INVALID_REQUEST
+        if (prompt.isBlank() || prompt.length > ProtocolLimits.MAX_PROMPT_CHARS) {
+            return ErrorCodes.INVALID_REQUEST
+        }
+        if (maxChars <= 0 || maxChars > ProtocolLimits.MAX_READ_CHARS) {
+            return ErrorCodes.INVALID_REQUEST
+        }
+        return null
+    }
+
     fun checkRead(scope: String, maxChars: Int): String? {
         if (scope !in ProtocolLimits.READ_SCOPES) return ErrorCodes.INVALID_REQUEST
         if (maxChars <= 0 || maxChars > ProtocolLimits.MAX_READ_CHARS) {

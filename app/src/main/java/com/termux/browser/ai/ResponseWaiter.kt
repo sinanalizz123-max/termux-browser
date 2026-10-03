@@ -25,7 +25,9 @@ data class Snapshot(
     val generating: Boolean = false,
     val loginRequired: Boolean = false,
     val captcha: Boolean = false,
-    val error: Boolean = false
+    val error: Boolean = false,
+    val promptFound: Boolean = false,
+    val submitFound: Boolean = false
 )
 
 interface SnapshotProvider {
@@ -52,7 +54,9 @@ object SnapshotParser {
                 generating = bool("generating"),
                 loginRequired = bool("loginRequired"),
                 captcha = bool("captcha"),
-                error = bool("error")
+                error = bool("error"),
+                promptFound = bool("promptFound"),
+                submitFound = bool("submitFound")
             )
         }.getOrNull()
     }

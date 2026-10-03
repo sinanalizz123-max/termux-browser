@@ -38,6 +38,15 @@ interface SiteAdapter {
 
     /** Static, zero-parameter snapshot script returning Snapshot JSON. */
     fun snapshotScript(): String
+
+    /**
+     * Deterministic, side-effect-free health from a snapshot. Default fails
+     * closed: only recognized adapters with confirmed controls pass.
+     */
+    fun health(snapshot: Snapshot, url: String): AdapterHealth {
+        val recognized = detect(url)
+        return AdapterHealth(site = id, recognized = recognized)
+    }
 }
 
 /**

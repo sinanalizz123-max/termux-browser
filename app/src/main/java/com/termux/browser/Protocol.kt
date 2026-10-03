@@ -46,6 +46,7 @@ object ErrorCodes {
     const val TIMEOUT = "TIMEOUT"
     const val DOM_CHANGED = "DOM_CHANGED"
     const val AI_ERROR = "AI_ERROR"
+    const val ADAPTER_UNRECOGNIZED = "ADAPTER_UNRECOGNIZED"
 }
 
 @Serializable
@@ -75,6 +76,13 @@ data class SearchRequest(val query: String = "")
 @Serializable
 data class ReadRequest(
     val scope: String = "page",
+    val maxChars: Int = 20000
+)
+
+@Serializable
+data class AiChatRequest(
+    val site: String = "",
+    val prompt: String = "",
     val maxChars: Int = 20000
 )
 
