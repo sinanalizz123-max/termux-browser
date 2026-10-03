@@ -47,8 +47,11 @@ class BrowserActivity : Activity(), PageHost {
     internal lateinit var controller: BrowserController
     internal lateinit var statusView: TextView
     internal lateinit var webView: WebView
+    internal lateinit var drawerLayout: androidx.drawerlayout.widget.DrawerLayout
+    internal lateinit var menuButton: Button
     private lateinit var urlInput: EditText
     private lateinit var logView: TextView
+    private lateinit var progressBar: ProgressBar
     private val policy = ControlPolicy()
     private val log = ActivityLog()
     private val bus = EventBus()
@@ -86,22 +89,138 @@ class BrowserActivity : Activity(), PageHost {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val root = LinearLayout(this).apply {
+        fun dp(value: Int): Int =
+            (value * resources.displayMetrics.density).toInt()
+
+        // DuckDuckGo-style pill background for the address bar.
+        fun pillBackground(): android.graphics.drawable.GradientDrawable {
+            return android.graphics.drawable.GradientDrawable().apply {
+                setColor(0xFFF1F3F4.toInt())
+                cornerRadius = dp(24).toFloat()
+            }
+        }
+
+        drawerLayout = androidx.drawerlayout.widget.DrawerLayout(this)
+
+        // ---- Main content: top bar, nav row, status, progress, page ----
+        val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
         }
-        statusView = TextView(this).apply {
-            contentDescription = "Browser status"
+        val topBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(dp(8), dp(8), dp(8), dp(4))
+        }
+        menuButton = Button(this).apply {
+            text = "☰"
+            contentDescription = "Menu"
+            textSize = 20f
+            setPadding(dp(4), dp(4), dp(4), dp(4))
+            setOnClickListener { toggleMenu() }
         }
         urlInput = EditText(this).apply {
-            hint = "URL or search"
+            hint = "Search or enter address"
             contentDescription = "Address bar"
+            background = pillBackground()
+            setPadding(dp(16), dp(10), dp(16), dp(10))
+            textSize = 15f
+            isSingleLine = true
         }
         val go = Button(this).apply { text = "Go" }
-        val nav = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        val back = Button(this).apply { text = "Back" }
-        val forward = Button(this).apply { text = "Fwd" }
-        val reload = Button(this).apply { text = "Reload" }
-        val stop = Button(this).apply { text = "Stop" }
+        topBar.addView(
+            menuButton,
+            LinearLayout.LayoutParams(dp(48), LinearLayout.LayoutParams.WRAP_CONTENT)
+        )
+        topBar.addView(
+            urlInput,
+            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                setMargins(dp(8), 0, dp(8), 0)
+            }
+        )
+        topBar.addView(go)
+        content.addView(topBar)
+
+        val nav = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(dp(8), 0, dp(8), dp(4))
+        }
+        val back = Button(this).apply { text = "‹" }
+        val forward = Button(this).apply { text = "›" }
+        val reload = Button(this).apply { text = "↻" }
+        val stop = Button(this).apply { text = "✕" }
+        nav.addView(back)
+        nav.addView(forward)
+        nav.addView(reload)
+        nav.addView(stop)
+        content.addView(nav)
+
+        statusView = TextView(this).apply {
+            contentDescription = "Browser status"
+            setPadding(dp(12), dp(2), dp(12), dp(2))
+            textSize = 12f
+        }
+        content.addView(statusView)
+
+        progressBar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
+            max = 100
+            visibility = android.view.View.GONE
+        }
+        content.addView(
+            progressBar,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(4)
+            )
+        )
+
+        webView = WebView(this).apply {
+            contentDescription = "Browser page"
+        }
+        content.addView(
+            webView,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                0,
+                1f
+            )
+        )
+        drawerLayout.addView(
+            content,
+            androidx.drawerlayout.widget.DrawerLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.MATCH_PARENT
+            )
+        )
+
+        // ---- Left drawer: Termux menu with the activity log tab ----
+        val pane = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(0xFFFFFFFF.toInt())
+            setPadding(dp(16), dp(24), dp(16), dp(16))
+        }
+        val paneTitle = TextView(this).apply {
+            text = "Termux"
+            textSize = 20f
+        }
+        pane.addView(paneTitle)
+        val logHeader = TextView(this).apply {
+            text = "Activity"
+            textSize = 14f
+            setPadding(0, dp(12), 0, dp(4))
+        }
+        pane.addView(logHeader)
+        logView = TextView(this).apply {
+            contentDescription = "Activity log"
+            textSize = 12f
+        }
+        val logScroll = ScrollView(this).apply { addView(logView) }
+        pane.addView(
+            logScroll,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                0,
+                1f
+            )
+        )
         val pair = Button(this).apply {
             text = "Pair Termux"
             contentDescription = "Show Termux pairing details"
@@ -110,40 +229,17 @@ class BrowserActivity : Activity(), PageHost {
             text = "API keys"
             contentDescription = "Manage provider API keys"
         }
-        webView = WebView(this).apply {
-            contentDescription = "Browser page"
-        }
-        logView = TextView(this).apply {
-            contentDescription = "Activity log"
-        }
-        val logScroll = ScrollView(this).apply { addView(logView) }
-
-        root.addView(statusView)
-        root.addView(urlInput)
-        root.addView(go)
-        nav.addView(back)
-        nav.addView(forward)
-        nav.addView(reload)
-        nav.addView(stop)
-        nav.addView(pair)
-        nav.addView(apiKeys)
-        root.addView(nav)
-        root.addView(
-            webView,
-            LinearLayout.LayoutParams(
+        pane.addView(pair)
+        pane.addView(apiKeys)
+        drawerLayout.addView(
+            pane,
+            androidx.drawerlayout.widget.DrawerLayout.LayoutParams(
+                dp(300),
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                0,
-                1f
+                android.view.Gravity.START
             )
         )
-        root.addView(
-            logScroll,
-            LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-        )
-        setContentView(root)
+        setContentView(drawerLayout)
 
         controller = BrowserController(
             this,
@@ -207,7 +303,9 @@ class BrowserActivity : Activity(), PageHost {
         )
         server = api
         activityScope.launch {
-            val started = runCatching { api.start() }
+            // Tests override to an ephemeral port so suites never fight
+            // over the fixed port in one JVM.
+            val started = runCatching { api.start(testPortOverride ?: LocalApiServer.FIXED_PORT) }
             if (started.isFailure) {
                 // Non-destructive: token untouched, no ready advertisement.
                 // Control returns on next activity creation once free.
@@ -283,6 +381,25 @@ class BrowserActivity : Activity(), PageHost {
     override fun onStop() {
         applyFgs(fgs.onVisibilityChanged(false))
         super.onStop()
+    }
+
+    internal fun toggleMenu() {
+        if (drawerLayout.isDrawerOpen(android.view.Gravity.START)) {
+            drawerLayout.closeDrawer(android.view.Gravity.START)
+        } else {
+            drawerLayout.openDrawer(android.view.Gravity.START)
+        }
+    }
+
+    @Deprecated("Use back-press dispatch on newer platforms")
+    override fun onBackPressed() {
+        if (drawerLayout.isDrawerOpen(android.view.Gravity.START)) {
+            drawerLayout.closeDrawer(android.view.Gravity.START)
+        } else if (webView.canGoBack()) {
+            webView.goBack()
+        } else {
+            super.onBackPressed()
+        }
     }
 
     override fun onDestroy() {
@@ -509,7 +626,9 @@ class BrowserActivity : Activity(), PageHost {
             override fun onPageStarted(view: WebView, url: String, favicon: android.graphics.Bitmap?) {
                 pageLoading = true
                 controller.onPageStarted(url)
-            }            override fun shouldOverrideUrlLoading(
+            }
+
+            override fun shouldOverrideUrlLoading(
                 view: WebView,
                 request: WebResourceRequest
             ): Boolean {
@@ -531,6 +650,9 @@ class BrowserActivity : Activity(), PageHost {
             override fun onPageFinished(view: WebView, url: String) {
                 pageLoading = false
                 controller.onPageFinished(url)
+                if (!urlInput.hasFocus()) {
+                    urlInput.setText(url)
+                }
             }
 
             override fun onReceivedError(
@@ -541,6 +663,14 @@ class BrowserActivity : Activity(), PageHost {
                 if (request.isForMainFrame) {
                     controller.onPageError(request.url.toString(), error.description.toString())
                 }
+            }
+        }
+        webView.webChromeClient = object : android.webkit.WebChromeClient() {
+            override fun onProgressChanged(view: WebView, newProgress: Int) {
+                progressBar.progress = newProgress
+                progressBar.visibility =
+                    if (newProgress >= 100) android.view.View.GONE
+                    else android.view.View.VISIBLE
             }
         }
     }
@@ -556,5 +686,8 @@ class BrowserActivity : Activity(), PageHost {
          * always uses the Android Keystore.
          */
         internal var testCrypto: TokenCrypto? = null
+
+        /** Test-only hook: bind an ephemeral port instead of the fixed one. */
+        internal var testPortOverride: Int? = null
     }
 }

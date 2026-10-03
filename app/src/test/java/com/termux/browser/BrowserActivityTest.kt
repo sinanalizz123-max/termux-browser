@@ -46,11 +46,15 @@ class BrowserActivityTest {
     @Before
     fun setUp() {
         BrowserActivity.testCrypto = XorCrypto()
+        // Ephemeral ports: activity servers must never fight the fixed
+        // port (or each other) inside one test JVM.
+        BrowserActivity.testPortOverride = 0
     }
 
     @After
     fun tearDown() {
         BrowserActivity.testCrypto = null
+        BrowserActivity.testPortOverride = null
     }
 
     @Test
@@ -118,6 +122,22 @@ class BrowserActivityTest {
         controller.resume()
         val stopped = shadowOf(activity.application).nextStoppedService
         assertEquals(AutomationService::class.java.name, stopped.component?.className)
+    }
+
+    @Test
+    fun `menu button opens and closes the activity drawer`() {
+        val activity = startActivity()
+        assertFalse(
+            activity.drawerLayout.isDrawerOpen(android.view.Gravity.START)
+        )
+        activity.menuButton.performClick()
+        assertTrue(
+            activity.drawerLayout.isDrawerOpen(android.view.Gravity.START)
+        )
+        activity.menuButton.performClick()
+        assertFalse(
+            activity.drawerLayout.isDrawerOpen(android.view.Gravity.START)
+        )
     }
 
     @Test

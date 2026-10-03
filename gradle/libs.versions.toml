@@ -11,6 +11,7 @@ coroutines = "1.10.2"
 
 [libraries]
 webkit = { group = "androidx.webkit", name = "webkit", version.ref = "webkit" }
+drawerlayout = { group = "androidx.drawerlayout", name = "drawerlayout", version = "1.2.0" }
 ktor-server-core = { group = "io.ktor", name = "ktor-server-core", version.ref = "ktor" }
 ktor-server-cio = { group = "io.ktor", name = "ktor-server-cio", version.ref = "ktor" }
 ktor-server-websockets = { group = "io.ktor", name = "ktor-server-websockets", version.ref = "ktor" }

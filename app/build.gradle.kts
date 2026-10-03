@@ -55,6 +55,7 @@ android {
 
 dependencies {
     implementation(libs.webkit)
+    implementation(libs.drawerlayout)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.ktor.server.core)
