@@ -17,6 +17,19 @@ object PageScripts {
         "(function(){return JSON.stringify({images:Array.prototype.slice.call(document.images,0,200).map(function(m){return{src:m.currentSrc||m.src||'',alt:(m.alt||'').slice(0,200)}})})})()"
 
     /**
+     * Fixed-shape click script. The selector travels only as a JSON string
+     * literal (data); the code shape never changes. Returns clicked status
+     * plus the clicked tag for confirmation.
+     */
+    fun clickScript(selectorJson: String): String =
+        "(function(){var s=$selectorJson;var e=null;" +
+            "try{e=document.querySelector(s);}catch(_){return JSON.stringify({clicked:false,reason:'bad-selector'});}" +
+            "if(!e)return JSON.stringify({clicked:false,reason:'not-found'});" +
+            "try{e.scrollIntoView({block:'center'});}catch(_){}" +
+            "try{e.click();}catch(_){return JSON.stringify({clicked:false,reason:'click-threw'});}" +
+            "return JSON.stringify({clicked:true,tag:e.tagName||''});})()"
+
+    /**
      * Deterministic readability-style heuristic: prefers article/main
      * content, falls back to bounded body extraction (native truncation is
      * authoritative). No network, no waiting, no async DOM dependence.

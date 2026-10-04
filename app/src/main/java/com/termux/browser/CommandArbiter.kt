@@ -36,6 +36,8 @@ sealed interface BrowserCommand {
         enum class Kind { BACK, FORWARD, RELOAD }
     }
     data class Read(val scope: String, val maxChars: Int) : BrowserCommand
+    data class Click(val selector: String, val source: String) : BrowserCommand
+    data class Tap(val xCss: Double, val yCss: Double, val source: String) : BrowserCommand
     data class AiChat(
         val site: String,
         val prompt: String,
@@ -142,6 +144,8 @@ class CommandArbiter(
                 is BrowserCommand.Open -> executeOpen(cmd)
                 is BrowserCommand.Navigate -> executeNavigate(cmd)
                 is BrowserCommand.Read -> executeRead(cmd)
+                is BrowserCommand.Click -> executeClick(cmd)
+                is BrowserCommand.Tap -> executeTap(cmd)
                 is BrowserCommand.AiChat -> executeAiChat(cmd)
                 is BrowserCommand.ApiChat -> executeApiChat(cmd)
             }
@@ -277,6 +281,33 @@ class CommandArbiter(
             }
         } finally {
             ui.run { runCatching { host.evalJs(JsPrompt.CLEAR_SCRIPT) } }
+        }
+    }
+
+    private suspend fun executeClick(cmd: BrowserCommand.Click): String {
+        val raw = ui.run {
+            host.evalJs(PageScripts.clickScript(json.encodeToString(cmd.selector)))
+        }
+        val parsed = parseJsObject(raw)
+        val clicked = parsed?.get("clicked")?.jsonPrimitive?.content == "true"
+        val tag = parsed?.get("tag")?.jsonPrimitive?.content ?: ""
+        val reason = parsed?.get("reason")?.jsonPrimitive?.content ?: ""
+        return if (clicked) {
+            """{"state":"completed","tag":${json.encodeToString(tag)}}"""
+        } else {
+            """{"state":"failed","error":"${ErrorCodes.CLICK_MISSED}","reason":${json.encodeToString(reason)}}"""
+        }
+    }
+
+    private suspend fun executeTap(cmd: BrowserCommand.Tap): String {
+        if (!cmd.xCss.isFinite() || !cmd.yCss.isFinite()) {
+            return failed(ErrorCodes.INVALID_REQUEST)
+        }
+        val tapped = ui.run { host.tap(cmd.xCss, cmd.yCss) }
+        return if (tapped) {
+            """{"state":"completed","x":${cmd.xCss},"y":${cmd.yCss}}"""
+        } else {
+            failed(ErrorCodes.CLICK_MISSED)
         }
     }
 

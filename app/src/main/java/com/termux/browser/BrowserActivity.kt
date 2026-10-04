@@ -307,12 +307,16 @@ class BrowserActivity : Activity(), PageHost {
         pair.setOnClickListener { showPairing() }
         apiKeys.setOnClickListener { showApiKeys() }
         webView.setOnTouchListener { _, event ->
-            if (event.action == MotionEvent.ACTION_DOWN) {
-                policy.onUserInput()
-                announce("User browsing.")
-            }
-            if (event.action == MotionEvent.ACTION_UP && learnMode) {
-                recordLearnTap(event.x, event.y)
+            // Automation taps drive through here too; only human touches
+            // count as user input or learn material.
+            if (!syntheticTap) {
+                if (event.action == MotionEvent.ACTION_DOWN) {
+                    policy.onUserInput()
+                    announce("User browsing.")
+                }
+                if (event.action == MotionEvent.ACTION_UP && learnMode) {
+                    recordLearnTap(event.x, event.y)
+                }
             }
             false
         }
@@ -707,6 +711,38 @@ class BrowserActivity : Activity(), PageHost {
     }
 
     override fun currentUrl(): String? = webView.url
+
+    /**
+     * Genuine platform tap: real DOWN/UP MotionEvents through the view
+     * system at the scaled position. Trusted input — the path your finger
+     * takes — for controls that ignore script-synthesized events.
+     */
+    @Volatile
+    private var syntheticTap: Boolean = false
+
+    override suspend fun tap(xCss: Double, yCss: Double): Boolean {
+        val scale = uiRunner.run { webView.scale }
+        if (!scale.isFinite() || scale <= 0f) return false
+        val x = (xCss * scale).toFloat()
+        val y = (yCss * scale).toFloat()
+        if (!x.isFinite() || !y.isFinite() || x < 0 || y < 0) return false
+        return uiRunner.run {
+            syntheticTap = true
+            try {
+                val now = android.os.SystemClock.uptimeMillis()
+                val down = android.view.MotionEvent.obtain(now, now, android.view.MotionEvent.ACTION_DOWN, x, y, 0)
+                val dispatched = webView.dispatchTouchEvent(down)
+                down.recycle()
+                kotlinx.coroutines.delay(120)
+                val up = android.view.MotionEvent.obtain(now, now + 120, android.view.MotionEvent.ACTION_UP, x, y, 0)
+                webView.dispatchTouchEvent(up)
+                up.recycle()
+                dispatched
+            } finally {
+                syntheticTap = false
+            }
+        }
+    }
 
     override suspend fun evalJs(script: String): String? =
         suspendCancellableCoroutine { cont ->

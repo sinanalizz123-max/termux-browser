@@ -289,6 +289,33 @@ def cmd_plugin(args):
     print(json.dumps(body, indent=2))
 
 
+def cmd_click(args):
+    import argparse
+    p = argparse.ArgumentParser(prog="browserctl click")
+    p.add_argument("selector")
+    p.add_argument("--wait", type=int, default=15)
+    ns = p.parse_args(args)
+    code, body = api("POST", "/commands/click", {"selector": ns.selector})
+    print(json.dumps(body, indent=2))
+    cmd_id = body.get("envelope", {}).get("commandId")
+    if cmd_id and ns.wait > 0:
+        cmd_result([cmd_id, "--wait", str(ns.wait)])
+
+
+def cmd_tap(args):
+    import argparse
+    p = argparse.ArgumentParser(prog="browserctl tap")
+    p.add_argument("x", type=float)
+    p.add_argument("y", type=float)
+    p.add_argument("--wait", type=int, default=15)
+    ns = p.parse_args(args)
+    code, body = api("POST", "/commands/tap", {"x": ns.x, "y": ns.y})
+    print(json.dumps(body, indent=2))
+    cmd_id = body.get("envelope", {}).get("commandId")
+    if cmd_id and ns.wait > 0:
+        cmd_result([cmd_id, "--wait", str(ns.wait)])
+
+
 def cmd_control(name):
     def run(_args):
         code, body = api("POST", f"/control/{name}")
@@ -415,6 +442,8 @@ def cmd_watch(_args):
 COMMANDS = {
     "connect": cmd_connect,
     "ai": cmd_ai,
+    "click": cmd_click,
+    "tap": cmd_tap,
     "apichat": cmd_apichat,
     "debug": cmd_debug,
     "probe": cmd_probe,

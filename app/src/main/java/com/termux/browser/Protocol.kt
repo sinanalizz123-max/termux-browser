@@ -49,6 +49,7 @@ object ErrorCodes {
     const val ADAPTER_UNRECOGNIZED = "ADAPTER_UNRECOGNIZED"
     const val PROVIDER_DISABLED = "PROVIDER_DISABLED"
     const val SUBMIT_UNCONFIRMED = "SUBMIT_UNCONFIRMED"
+    const val CLICK_MISSED = "CLICK_MISSED"
 }
 
 @Serializable
@@ -82,8 +83,20 @@ data class ReadRequest(
 )
 
 @Serializable
+data class ClickRequest(
+    val selector: String = ""
+)
+
+@Serializable
+data class TapRequest(
+    val x: Double = -1.0,
+    val y: Double = -1.0
+)
+
+@Serializable
 data class ProbeRequest(
-    val selectors: List<String> = emptyList()
+    val selectors: List<String> = emptyList(),
+    val rects: Boolean = false
 )
 
 @Serializable

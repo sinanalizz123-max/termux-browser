@@ -80,6 +80,19 @@ class RequestValidatorTest {
     }
 
     @Test
+    fun `click selectors are bounded`() {
+        assertNull(RequestValidator.checkClick("button.send"))
+        assertEquals(
+            ErrorCodes.INVALID_REQUEST,
+            RequestValidator.checkClick("   ")
+        )
+        assertEquals(
+            ErrorCodes.INVALID_REQUEST,
+            RequestValidator.checkClick("x".repeat(201))
+        )
+    }
+
+    @Test
     fun `bearer check is exact`() {
         val token = ByteArray(32) { it.toByte() }
         val hex = token.joinToString("") { "%02x".format(it) }

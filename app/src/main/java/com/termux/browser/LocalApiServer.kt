@@ -119,6 +119,8 @@ class LocalApiServer(
                         post("/commands/reload") { handleNavigate(BrowserCommand.Navigate.Kind.RELOAD) }
                         post("/commands/stop") { handleStopCommand() }
                     post("/commands/read") { handleRead() }
+                    post("/commands/click") { handleClick() }
+                    post("/commands/tap") { handleTap() }
                     post("/commands/ai-chat") { handleAiChat() }
                     post("/commands/api-chat") { handleApiChat() }
                     post("/control/pause") { handlePause() }
@@ -340,6 +342,40 @@ class LocalApiServer(
         }
     }
 
+    private suspend fun RoutingContext.handleClick() {
+        if (!authorized() || rateLimited()) return
+        val text = readJsonBody() ?: return
+        val request = runCatching {
+            json.decodeFromString<ClickRequest>(text)
+        }.getOrNull() ?: return error(ErrorCodes.INVALID_REQUEST, "Invalid click request.")
+        RequestValidator.checkClick(request.selector)?.let {
+            return error(it, "Rejected click request.")
+        }
+        when (val submitted = arbiter.submit(
+            BrowserCommand.Click(request.selector, "termux")
+        )) {
+            is SubmitResult.Accepted -> accepted(submitted)
+            is SubmitResult.QueueFull -> queueFull()
+        }
+    }
+
+    private suspend fun RoutingContext.handleTap() {
+        if (!authorized() || rateLimited()) return
+        val text = readJsonBody() ?: return
+        val request = runCatching {
+            json.decodeFromString<TapRequest>(text)
+        }.getOrNull() ?: return error(ErrorCodes.INVALID_REQUEST, "Invalid tap request.")
+        RequestValidator.checkTap(request.x, request.y)?.let {
+            return error(it, "Rejected tap request.")
+        }
+        when (val submitted = arbiter.submit(
+            BrowserCommand.Tap(request.x, request.y, "termux")
+        )) {
+            is SubmitResult.Accepted -> accepted(submitted)
+            is SubmitResult.QueueFull -> queueFull()
+        }
+    }
+
     private suspend fun RoutingContext.handleAiChat() {
         if (!authorized() || rateLimited()) return
         val text = readJsonBody() ?: return
@@ -441,12 +477,21 @@ class LocalApiServer(
         if (request.selectors.size > 20 || request.selectors.any { it.length > 200 }) {
             return error(ErrorCodes.INVALID_REQUEST, "Probe bounded to 20 short selectors.")
         }
-        val script = "(function(){var S=${json.encodeToString(request.selectors)};" +
-            "return JSON.stringify(S.map(function(s){try{return document.querySelectorAll(s).length;}" +
-            "catch(e){return -1;}}))})()"
+        val script = if (request.rects) {
+            "(function(){var S=${json.encodeToString(request.selectors)};" +
+                "return JSON.stringify(S.map(function(s){try{var e=document.querySelector(s);" +
+                "if(!e)return null;var r=e.getBoundingClientRect();" +
+                "return {x:Math.round(r.x),y:Math.round(r.y),w:Math.round(r.width),h:Math.round(r.height)};}" +
+                "catch(_){return null;}}))})()"
+        } else {
+            "(function(){var S=${json.encodeToString(request.selectors)};" +
+                "return JSON.stringify(S.map(function(s){try{return document.querySelectorAll(s).length;}" +
+                "catch(e){return -1;}}))})()"
+        }
         val raw = arbiter.debugEval(script)
+        val key = if (request.rects) "rects" else "counts"
         call.respondText(
-            """{"envelope":${json.encodeToString(envelope())},"counts":${raw ?: "null"}}""",
+            """{"envelope":${json.encodeToString(envelope())},"$key":${raw ?: "null"}}""",
             ContentType.Application.Json
         )
     }

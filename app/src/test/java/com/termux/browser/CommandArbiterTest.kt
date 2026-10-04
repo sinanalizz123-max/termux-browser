@@ -394,6 +394,87 @@ class CommandArbiterTest {
     }
 
     @Test
+    fun `click reports the clicked tag`() = runBlocking {
+        val host = FakeHost().apply {
+            evalResult = """{"clicked":true,"tag":"BUTTON"}"""
+        }
+        val results = ResultStore()
+        val controller = BrowserController(host, ControlPolicy(), ActivityLog(), announce = {})
+        val arbiter = CommandArbiter(
+            this, ui(), host, controller, ControlPolicy(), results
+        )
+        try {
+            val submitted = arbiter.submit(BrowserCommand.Click("[data-testid]", "termux"))
+            val id = (submitted as SubmitResult.Accepted).commandId
+            val stored = awaitResult(results, id)
+            assertTrue(stored!!.body.contains("completed"))
+            assertTrue(stored.body.contains("BUTTON"))
+        } finally {
+            arbiter.close()
+        }
+    }
+
+    @Test
+    fun `click miss reports without crashing`() = runBlocking {
+        val host = FakeHost().apply {
+            evalResult = """{"clicked":false,"reason":"not-found"}"""
+        }
+        val results = ResultStore()
+        val controller = BrowserController(host, ControlPolicy(), ActivityLog(), announce = {})
+        val arbiter = CommandArbiter(
+            this, ui(), host, controller, ControlPolicy(), results
+        )
+        try {
+            val submitted = arbiter.submit(BrowserCommand.Click(".nope", "termux"))
+            val id = (submitted as SubmitResult.Accepted).commandId
+            val stored = awaitResult(results, id)
+            assertTrue(stored!!.body.contains("CLICK_MISSED"))
+        } finally {
+            arbiter.close()
+        }
+    }
+
+    @Test
+    fun `tap dispatches through the host`() = runBlocking {
+        val host = FakeHost()
+        var tapped: Pair<Double, Double>? = null
+        val tappingHost = object : PageHost by host {
+            override suspend fun tap(xCss: Double, yCss: Double): Boolean {
+                tapped = xCss to yCss
+                return true
+            }
+        }
+        val results = ResultStore()
+        val controller = BrowserController(host, ControlPolicy(), ActivityLog(), announce = {})
+        val arbiter = CommandArbiter(
+            this, ui(), tappingHost, controller, ControlPolicy(), results
+        )
+        try {
+            val submitted = arbiter.submit(BrowserCommand.Tap(100.0, 200.0, "termux"))
+            val id = (submitted as SubmitResult.Accepted).commandId
+            val stored = awaitResult(results, id)
+            assertTrue(stored!!.body.contains("completed"))
+            assertEquals(Pair(100.0, 200.0), tapped)
+        } finally {
+            arbiter.close()
+        }
+    }
+
+    @Test
+    fun `tap rejects bad coordinates`() {
+        assertNull(RequestValidator.checkTap(10.0, 20.0))
+        for (bad in listOf(
+            Pair(Double.NaN, 1.0), Pair(1.0, Double.POSITIVE_INFINITY),
+            Pair(-5.0, 1.0), Pair(1.0, 20000.0)
+        )) {
+            assertEquals(
+                ErrorCodes.INVALID_REQUEST,
+                RequestValidator.checkTap(bad.first, bad.second)
+            )
+        }
+    }
+
+    @Test
     fun `full queue answers queue-full`() = runBlocking {
         val host = FakeHost()
         val policy = ControlPolicy()

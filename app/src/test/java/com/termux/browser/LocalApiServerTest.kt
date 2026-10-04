@@ -305,7 +305,8 @@ class LocalApiServerTest {
             "GET" to "/debug/commands",
             "GET" to "/debug/crashes",
             "GET" to "/debug/recording",
-            "POST" to "/control/recording"
+            "POST" to "/control/recording",
+            "POST" to "/commands/tap"
         )
         for ((method, path) in routes) {
             val code = codeOf(method, path, if (method == "POST") "{}" else null)
@@ -371,6 +372,19 @@ class LocalApiServerTest {
         assertEquals(404, missingCode)
         val (evilCode, _) = get("/debug/crashes/../evil", hex)
         assertEquals(404, evilCode)
+    }
+
+    @Test
+    fun `tap rejects bad coordinates at the api`() {
+        val (code, body) = post("/commands/tap", hex, """{"x":-1,"y":5}""")
+        assertEquals(400, code)
+        assertTrue(body.contains(ErrorCodes.INVALID_REQUEST))
+    }
+
+    @Test
+    fun `probe rects key present when requested`() {
+        val (_, body) = post("/debug/probe", hex, """{"selectors":["a"],"rects":true}""")
+        assertTrue(body.contains("\"rects\""))
     }
 
     @Test

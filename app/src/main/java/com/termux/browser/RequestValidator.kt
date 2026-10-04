@@ -33,6 +33,24 @@ object RequestValidator {
         return null
     }
 
+    fun checkTap(x: Double?, y: Double?): String? {
+        if (x == null || y == null || !x.isFinite() || !y.isFinite()) {
+            return ErrorCodes.INVALID_REQUEST
+        }
+        // CSS pixels: generous upper bound, negatives rejected.
+        if (x < 0 || y < 0 || x > 10000 || y > 10000) {
+            return ErrorCodes.INVALID_REQUEST
+        }
+        return null
+    }
+
+    fun checkClick(selector: String): String? {
+        if (selector.isBlank() || selector.length > 200) {
+            return ErrorCodes.INVALID_REQUEST
+        }
+        return null
+    }
+
     fun checkRead(scope: String, maxChars: Int): String? {
         if (scope !in ProtocolLimits.READ_SCOPES) return ErrorCodes.INVALID_REQUEST
         if (maxChars <= 0 || maxChars > ProtocolLimits.MAX_READ_CHARS) {

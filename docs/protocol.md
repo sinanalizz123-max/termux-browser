@@ -37,6 +37,14 @@ route, including WebSocket upgrade, requires the bearer token.
   (bounded by event count AND approximate bytes).
 - `GET /v1/result/<command-id>`
 - `POST /v1/commands/open|search|back|forward|reload|stop|read`
+- `POST /v1/commands/click` — clicks the first match of a selector via a
+  fixed-shape script (selector travels as JSON data only); reports
+  clicked tag or `CLICK_MISSED`
+- `POST /v1/commands/tap` — genuine platform tap at CSS-pixel coordinates
+  (real trusted touch events, for controls ignoring synthetic input);
+  coordinates validated, never treated as user takeover
+- `POST /v1/debug/probe` accepts `rects:true` to return element rectangles
+  alongside counts (layout data only, never content)
 - `POST /v1/commands/ai-chat` — reserved in M0/M1, implemented M7+.
 - `POST /v1/commands/api-chat` — M10 provider API chat; same envelope and
   result semantics. Provider keys live app-side only and never cross the API.

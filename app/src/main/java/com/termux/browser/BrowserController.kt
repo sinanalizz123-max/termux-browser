@@ -16,6 +16,13 @@ interface PageHost {
 
     /** Runs a static extraction script; returns its JSON string or null. */
     suspend fun evalJs(script: String): String?
+
+    /**
+     * Genuine platform tap at CSS-pixel coordinates: real MotionEvents
+     * through the view system (trusted input, unlike JS-synthesized
+     * clicks). Default no-op for non-Android hosts (tests override).
+     */
+    suspend fun tap(xCss: Double, yCss: Double): Boolean = false
 }
 
 class BrowserController(
