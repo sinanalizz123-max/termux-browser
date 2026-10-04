@@ -158,6 +158,20 @@ class BrowserActivityTest {
     }
 
     @Test
+    fun `learn tap completes without touching views off main`() {
+        val activity = startActivity()
+        activity.controller.open("https://example.com", "user")
+        activity.learnMode = true
+        val now = SystemClock.uptimeMillis()
+        // Must not throw WrongThreadException from the recorder.
+        activity.webView.dispatchTouchEvent(
+            MotionEvent.obtain(now, now, MotionEvent.ACTION_UP, 100f, 100f, 0)
+        )
+        shadowOf(Looper.getMainLooper()).idle()
+        assertTrue(activity.learnMode)
+    }
+
+    @Test
     fun `touch announces user browsing in the status banner`() {
         val activity = startActivity()
         val now = SystemClock.uptimeMillis()

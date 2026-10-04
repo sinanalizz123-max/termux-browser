@@ -561,7 +561,8 @@ class BrowserActivity : Activity(), PageHost {
     private fun recordLearnTap(xPx: Float, yPx: Float) {
         val host = currentHost() ?: return
         activityScope.launch(Dispatchers.IO) {
-            val scale = webView.scale
+            // WebView methods are UI-thread only: read scale on Main first.
+            val scale = uiRunner.run { webView.scale }
             if (!scale.isFinite() || scale <= 0f) return@launch
             val raw = runCatching {
                 evalJs(
@@ -668,11 +669,21 @@ class BrowserActivity : Activity(), PageHost {
             }
         }
 
+    @Volatile
+    private var lastStatus: String = ""
+
+    /**
+     * Thread-safe by construction: every caller lands on the UI thread,
+     * so worker-thread automation can never touch Views directly.
+     */
     private fun announce(message: String) {
-        statusView.text = message
-        refreshLog()
-        if (notificationShown) {
-            notifier.show(message)
+        lastStatus = message
+        runOnUiThread {
+            statusView.text = message
+            refreshLog()
+            if (notificationShown) {
+                notifier.show(message)
+            }
         }
     }
 
@@ -698,7 +709,7 @@ class BrowserActivity : Activity(), PageHost {
     private fun startFgsService() {
         if (fgsRunning) return
         val intent = android.content.Intent(this, AutomationService::class.java).apply {
-            putExtra(AutomationService.EXTRA_STATE, statusView.text.toString())
+            putExtra(AutomationService.EXTRA_STATE, lastStatus)
         }
         runCatching { startForegroundService(intent) }
         fgsRunning = true
