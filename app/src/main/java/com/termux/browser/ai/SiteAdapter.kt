@@ -110,14 +110,17 @@ fun buildSnapshotScript(
         "var P=$p;var M=$m;var S=$s;var U=$u;" +
         "var nodes=[];for(var k=0;k<M.length;k++){try{var f=document.querySelectorAll(M[k]);for(var j=0;j<f.length;j++){nodes.push(f[j]);}}catch(e){}}" +
         "var last=nodes.length?nodes[nodes.length-1].innerText:'';" +
-        "var body=(document.body?document.body.innerText:'').slice(0,2000);" +
+            "var body=(document.body?document.body.innerText:'').slice(0,2000);" +
+            "var bodyLow=body.toLowerCase();" +
+            "var pageError=/network\\s*error|failed\\s*to\\s*(send|load|generate|fetch)|something\\s+went\\s+wrong|response\\s+stopped/.test(bodyLow);" +
             "var pe=first(P);var promptFound=!!pe;" +
             "var composerKind=!pe?'none':((pe.tagName==='TEXTAREA'||pe.tagName==='INPUT')?'textarea':(pe.isContentEditable?'contenteditable':'unknown'));" +
             "var composerText=!pe?'':(('value' in pe)?pe.value:(pe.textContent||''));" +
             "var composerEmpty=composerText.trim()==='';" +
         "return JSON.stringify({messageCount:nodes.length,lastText:(last||'').slice(-4000)," +
         "promptFound:promptFound,submitFound:any(U),generating:any(S),composerKind:composerKind,composerEmpty:composerEmpty,$marker" +
-        "loginRequired:!promptFound&&/log\\s*in|sign\\s*up/i.test(body)})})()"
+        "loginRequired:!promptFound&&/log\\s*in|sign\\s*up/i.test(body)," +
+        "error:pageError})})()"
 }
 
 /**

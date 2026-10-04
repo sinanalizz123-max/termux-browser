@@ -126,6 +126,15 @@ class ResponseWaiterTest {
     }
 
     @Test
+    fun `page error exits fast with ai error`() = runBlocking {
+        val script = Script(
+            listOf(snap(), snap(1, "hi", true), snap(error = true))
+        )
+        val result = script.waiter().await()
+        assertEquals(WaitResult.Failed("AI_ERROR"), result)
+    }
+
+    @Test
     fun `cancellation exits`() = runBlocking {
         val script = Script(listOf(snap(), snap(1, "hi", true)))
         script.cancelledFlag = true
