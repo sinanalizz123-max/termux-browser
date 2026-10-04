@@ -565,7 +565,9 @@ class CommandArbiterTest {
             // Real WebView outer-quotes the script's JSON string result.
             evalResult = "\"" + inner.replace("\"", "\\\"") + "\""
         }
-        val results = ResultStore()
+        // Roomier store: a 512 KB payload self-evicts from the default
+        // 256 KB store by design (verified elsewhere).
+        val results = ResultStore(maxBytes = 2 * 1024 * 1024)
         val controller = BrowserController(host, ControlPolicy(), ActivityLog(), announce = {})
         val arbiter = CommandArbiter(
             this, ui(), host, controller, ControlPolicy(), results
