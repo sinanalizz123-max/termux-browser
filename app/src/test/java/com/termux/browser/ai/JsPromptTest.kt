@@ -73,8 +73,8 @@ class JsPromptTest {
     @Test
     fun `submit script handles textarea and contenteditable composers`() {
         val script = JsPrompt.submitScript("\"hi\"", "[\"textarea\"]", "[\"button\"]")
-        // Textarea/input branch: value assignment plus input/change events.
-        assertTrue(script.contains("pe.value=text"))
+        // Textarea/input branch: native-setter assignment plus input/change events.
+        assertTrue(script.contains("setter.call(el,txt)"))
         assertTrue(script.contains("new Event('input'"))
         // Contenteditable branch: replaces existing DOM text.
         assertTrue(script.contains("pe.isContentEditable"))
