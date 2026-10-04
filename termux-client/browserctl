@@ -215,8 +215,10 @@ def cmd_probe(args):
     import argparse
     p = argparse.ArgumentParser(prog="browserctl probe")
     p.add_argument("selectors", nargs="+")
+    p.add_argument("--rects", action="store_true")
     ns = p.parse_args(args)
-    code, body = api("POST", "/debug/probe", {"selectors": ns.selectors})
+    code, body = api("POST", "/debug/probe",
+                     {"selectors": ns.selectors, "rects": ns.rects})
     print(json.dumps(body, indent=2))
 
 
@@ -310,6 +312,19 @@ def cmd_tap(args):
     p.add_argument("--wait", type=int, default=15)
     ns = p.parse_args(args)
     code, body = api("POST", "/commands/tap", {"x": ns.x, "y": ns.y})
+    print(json.dumps(body, indent=2))
+    cmd_id = body.get("envelope", {}).get("commandId")
+    if cmd_id and ns.wait > 0:
+        cmd_result([cmd_id, "--wait", str(ns.wait)])
+
+
+def cmd_tap_control(args):
+    import argparse
+    p = argparse.ArgumentParser(prog="browserctl tap-control")
+    p.add_argument("control")
+    p.add_argument("--wait", type=int, default=15)
+    ns = p.parse_args(args)
+    code, body = api("POST", "/commands/tap-control", {"control": ns.control})
     print(json.dumps(body, indent=2))
     cmd_id = body.get("envelope", {}).get("commandId")
     if cmd_id and ns.wait > 0:
@@ -444,6 +459,7 @@ COMMANDS = {
     "ai": cmd_ai,
     "click": cmd_click,
     "tap": cmd_tap,
+    "tap-control": cmd_tap_control,
     "apichat": cmd_apichat,
     "debug": cmd_debug,
     "probe": cmd_probe,

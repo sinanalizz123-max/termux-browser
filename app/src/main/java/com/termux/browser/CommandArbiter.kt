@@ -38,6 +38,7 @@ sealed interface BrowserCommand {
     data class Read(val scope: String, val maxChars: Int) : BrowserCommand
     data class Click(val selector: String, val source: String) : BrowserCommand
     data class Tap(val xCss: Double, val yCss: Double, val source: String) : BrowserCommand
+    data class TapControl(val control: String, val source: String) : BrowserCommand
     data class AiChat(
         val site: String,
         val prompt: String,
@@ -146,6 +147,7 @@ class CommandArbiter(
                 is BrowserCommand.Read -> executeRead(cmd)
                 is BrowserCommand.Click -> executeClick(cmd)
                 is BrowserCommand.Tap -> executeTap(cmd)
+                is BrowserCommand.TapControl -> executeTapControl(cmd)
                 is BrowserCommand.AiChat -> executeAiChat(cmd)
                 is BrowserCommand.ApiChat -> executeApiChat(cmd)
             }
@@ -306,6 +308,38 @@ class CommandArbiter(
         val tapped = ui.run { host.tap(cmd.xCss, cmd.yCss) }
         return if (tapped) {
             """{"state":"completed","x":${cmd.xCss},"y":${cmd.yCss}}"""
+        } else {
+            failed(ErrorCodes.CLICK_MISSED)
+        }
+    }
+
+    /**
+     * Replays a user-taught control: resolves the learned selector for the
+     * current host, probes its live rectangle, and taps its center with
+     * genuine platform input. Fails closed when nothing was ever taught.
+     */
+    private suspend fun executeTapControl(cmd: BrowserCommand.TapControl): String {
+        if (!cmd.control.matches(Regex("[a-z]{1,16}"))) {
+            return failed(ErrorCodes.INVALID_REQUEST)
+        }
+        val store = learnedStore ?: return failed(ErrorCodes.LEARNED_CONTROL_MISSING)
+        val pageUrl = ui.run { host.currentUrl() } ?: return failed(ErrorCodes.INVALID_REQUEST)
+        val selector = store.getControl(registry.hostOf(pageUrl), cmd.control)
+            ?: return failed(ErrorCodes.LEARNED_CONTROL_MISSING)
+        val script = "(function(){try{var e=document.querySelector(" +
+            json.encodeToString(selector) +
+            ");if(!e)return JSON.stringify(null);var r=e.getBoundingClientRect();" +
+            "return JSON.stringify({x:r.x,y:r.y,w:r.width,h:r.height});}" +
+            "catch(_){return JSON.stringify(null);}})()"
+        val rect = parseJsObject(ui.run { host.evalJs(script) })
+        val x = rect?.get("x")?.jsonPrimitive?.content?.toDoubleOrNull()
+        val y = rect?.get("y")?.jsonPrimitive?.content?.toDoubleOrNull()
+        val w = rect?.get("w")?.jsonPrimitive?.content?.toDoubleOrNull() ?: 0.0
+        val h = rect?.get("h")?.jsonPrimitive?.content?.toDoubleOrNull() ?: 0.0
+        if (x == null || y == null) return failed(ErrorCodes.CLICK_MISSED)
+        val tapped = ui.run { host.tap(x + w / 2, y + h / 2) }
+        return if (tapped) {
+            """{"state":"completed","control":${json.encodeToString(cmd.control)}}"""
         } else {
             failed(ErrorCodes.CLICK_MISSED)
         }

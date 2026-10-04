@@ -2,8 +2,11 @@ package com.termux.browser
 
 import android.os.Looper
 import android.os.SystemClock
-import androidx.core.view.GravityCompat
 import android.view.MotionEvent
+import android.view.View
+import android.view.ViewGroup
+import android.widget.Button
+import org.junit.Assert.assertNull
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -43,6 +46,18 @@ class BrowserActivityTest {
 
     private fun startActivity() =
         Robolectric.buildActivity(BrowserActivity::class.java).setup().get()
+
+    private fun findButton(activity: BrowserActivity, text: String): Button {
+        val queue = ArrayDeque<View>(listOf(activity.drawerLayout))
+        while (queue.isNotEmpty()) {
+            val view = queue.removeFirst()
+            if (view is Button && view.text.toString() == text) return view
+            if (view is ViewGroup) {
+                for (i in 0 until view.childCount) queue.add(view.getChildAt(i))
+            }
+        }
+        throw AssertionError("button not found: $text")
+    }
 
     @Before
     fun setUp() {
@@ -168,6 +183,16 @@ class BrowserActivityTest {
             MotionEvent.obtain(now, now, MotionEvent.ACTION_UP, 100f, 100f, 0)
         )
         shadowOf(Looper.getMainLooper()).idle()
+        assertTrue(activity.learnMode)
+    }
+
+    @Test
+    fun `teach buttons arm one-shot capture`() {
+        val activity = startActivity()
+        assertNull(activity.learnTarget)
+        val teachMenu = findButton(activity, "Teach menu")
+        teachMenu.performClick()
+        assertEquals("menu", activity.learnTarget)
         assertTrue(activity.learnMode)
     }
 

@@ -121,6 +121,7 @@ class LocalApiServer(
                     post("/commands/read") { handleRead() }
                     post("/commands/click") { handleClick() }
                     post("/commands/tap") { handleTap() }
+                    post("/commands/tap-control") { handleTapControl() }
                     post("/commands/ai-chat") { handleAiChat() }
                     post("/commands/api-chat") { handleApiChat() }
                     post("/control/pause") { handlePause() }
@@ -370,6 +371,23 @@ class LocalApiServer(
         }
         when (val submitted = arbiter.submit(
             BrowserCommand.Tap(request.x, request.y, "termux")
+        )) {
+            is SubmitResult.Accepted -> accepted(submitted)
+            is SubmitResult.QueueFull -> queueFull()
+        }
+    }
+
+    private suspend fun RoutingContext.handleTapControl() {
+        if (!authorized() || rateLimited()) return
+        val text = readJsonBody() ?: return
+        val request = runCatching {
+            json.decodeFromString<TapControlRequest>(text)
+        }.getOrNull() ?: return error(ErrorCodes.INVALID_REQUEST, "Invalid tap-control request.")
+        if (!request.control.matches(Regex("[a-z]{1,16}"))) {
+            return error(ErrorCodes.INVALID_REQUEST, "Rejected tap-control request.")
+        }
+        when (val submitted = arbiter.submit(
+            BrowserCommand.TapControl(request.control, "termux")
         )) {
             is SubmitResult.Accepted -> accepted(submitted)
             is SubmitResult.QueueFull -> queueFull()

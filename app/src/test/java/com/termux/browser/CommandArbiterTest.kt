@@ -462,6 +462,88 @@ class CommandArbiterTest {
     }
 
     @Test
+    fun `tap-control replays a taught control`() = runBlocking {
+        val host = FakeHost()
+        val policy = ControlPolicy()
+        val results = ResultStore()
+        val controller = BrowserController(host, policy, ActivityLog(), announce = {})
+        val dir = java.io.File(
+            System.getProperty("java.io.tmpdir"),
+            "tb-tapctl-${System.nanoTime()}"
+        )
+        dir.mkdirs()
+        try {
+            val learned = com.termux.browser.ai.LearnedStore(dir)
+            learned.putControl("example.com", "menu", "button.burger")
+            var tapped: Pair<Double, Double>? = null
+            val tappingHost = object : PageHost by host {
+                override suspend fun tap(xCss: Double, yCss: Double): Boolean {
+                    tapped = xCss to yCss
+                    return true
+                }
+                override suspend fun evalJs(script: String): String? {
+                    // Rect probe answers with a 10x10 box at (100,200).
+                    return "\"{\\\"x\\\":100,\\\"y\\\":200,\\\"w\\\":10,\\\"h\\\":10}\""
+                }
+            }
+            val ui2 = object : UiRunner {
+                override suspend fun <T> run(block: suspend () -> T): T = block()
+            }
+            val arbiter = CommandArbiter(
+                this, ui2, tappingHost, controller, policy, results,
+                learnedStore = learned
+            )
+            try {
+                // Host page must match the learned host.
+                host.url = "https://example.com/menu"
+                val submitted = arbiter.submit(
+                    BrowserCommand.TapControl("menu", "termux")
+                )
+                val id = (submitted as SubmitResult.Accepted).commandId
+                val stored = awaitResult(results, id)
+                assertTrue(stored!!.body.contains("completed"))
+                assertEquals(Pair(105.0, 205.0), tapped)
+            } finally {
+                arbiter.close()
+            }
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `tap-control without teaching fails closed`() = runBlocking {
+        val host = FakeHost()
+        val policy = ControlPolicy()
+        val results = ResultStore()
+        val controller = BrowserController(host, policy, ActivityLog(), announce = {})
+        val dir = java.io.File(
+            System.getProperty("java.io.tmpdir"),
+            "tb-tapctl-${System.nanoTime()}"
+        )
+        dir.mkdirs()
+        try {
+            val arbiter = CommandArbiter(
+                this, ui(), host, controller, policy, results,
+                learnedStore = com.termux.browser.ai.LearnedStore(dir)
+            )
+            try {
+                host.url = "https://example.com/"
+                val submitted = arbiter.submit(
+                    BrowserCommand.TapControl("menu", "termux")
+                )
+                val id = (submitted as SubmitResult.Accepted).commandId
+                val stored = awaitResult(results, id)
+                assertTrue(stored!!.body.contains("LEARNED_CONTROL_MISSING"))
+            } finally {
+                arbiter.close()
+            }
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    @Test
     fun `tap rejects bad coordinates`() {
         assertNull(RequestValidator.checkTap(10.0, 20.0))
         for (bad in listOf(

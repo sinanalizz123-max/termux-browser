@@ -306,7 +306,8 @@ class LocalApiServerTest {
             "GET" to "/debug/crashes",
             "GET" to "/debug/recording",
             "POST" to "/control/recording",
-            "POST" to "/commands/tap"
+            "POST" to "/commands/tap",
+            "POST" to "/commands/tap-control"
         )
         for ((method, path) in routes) {
             val code = codeOf(method, path, if (method == "POST") "{}" else null)

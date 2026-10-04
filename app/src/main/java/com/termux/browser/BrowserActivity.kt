@@ -77,6 +77,20 @@ class BrowserActivity : Activity(), PageHost {
         com.termux.browser.ai.LearnedStore(java.io.File(filesDir, "learned"))
     }
     internal var learnMode = false
+
+    /** One-shot capture target ("send", "menu", …); null when disarmed. */
+    internal var learnTarget: String? = null
+
+    internal fun armLearn(control: String) {
+        learnMode = true
+        learnTarget = control
+        announce("LEARN MODE: tap the $control button.")
+    }
+
+    internal fun disarmLearn() {
+        learnMode = false
+        learnTarget = null
+    }
     private val activityScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val uiRunner = object : UiRunner {
         override suspend fun <T> run(block: suspend () -> T): T =
@@ -254,22 +268,25 @@ class BrowserActivity : Activity(), PageHost {
             contentDescription = "Manage provider API keys"
         }
         val learnHeader = TextView(this).apply {
-            text = "Learn mode: tap a send button to teach it"
+            text = "Teach: tap a button, automation replays it"
             textSize = 14f
             setPadding(0, dp(12), 0, dp(4))
         }
-        val learnSwitch = Switch(this).apply {
-            text = "Learn mode"
-            contentDescription = "Toggle learn mode"
-            setOnCheckedChangeListener { _, checked ->
-                learnMode = checked
-                announce(if (checked) "LEARN MODE: tap the send button." else "Learn mode off.")
-            }
+        val teachSend = Button(this).apply {
+            text = "Teach send"
+            contentDescription = "Teach send button"
+            setOnClickListener { armLearn("send") }
+        }
+        val teachMenu = Button(this).apply {
+            text = "Teach menu"
+            contentDescription = "Teach menu button"
+            setOnClickListener { armLearn("menu") }
         }
         pane.addView(pair)
         pane.addView(apiKeys)
         pane.addView(learnHeader)
-        pane.addView(learnSwitch)
+        pane.addView(teachSend)
+        pane.addView(teachMenu)
         drawerLayout.addView(
             pane,
             androidx.drawerlayout.widget.DrawerLayout.LayoutParams(
@@ -315,7 +332,8 @@ class BrowserActivity : Activity(), PageHost {
                     announce("User browsing.")
                 }
                 if (event.action == MotionEvent.ACTION_UP && learnMode) {
-                    recordLearnTap(event.x, event.y)
+                    recordLearnTap(event.x, event.y, learnTarget ?: "send")
+                    disarmLearn()
                 }
             }
             false
@@ -611,10 +629,11 @@ class BrowserActivity : Activity(), PageHost {
 
     /**
      * Learn mode recorder: maps the user's tap to the element beneath it
-     * and stores the derived send selector for the current host. Position
-     * and structure only — no page content is ever read or stored.
+     * and stores the derived selector for the armed control ("send",
+     * "menu", …) on the current host. Position and structure only — no page
+     * content is ever read or stored.
      */
-    private fun recordLearnTap(xPx: Float, yPx: Float) {
+    private fun recordLearnTap(xPx: Float, yPx: Float, control: String) {
         val host = currentHost() ?: return
         activityScope.launch(Dispatchers.IO) {
             // WebView methods are UI-thread only: read scale on Main first.
@@ -630,9 +649,9 @@ class BrowserActivity : Activity(), PageHost {
             }.getOrNull()
             val info = com.termux.browser.ai.parseElementInfo(raw) ?: return@launch
             val selector = com.termux.browser.ai.LearnedSelectors.derive(info) ?: return@launch
-            learnedStore.put(host, selector)
+            learnedStore.putControl(host, control, selector)
             withContext(Dispatchers.Main) {
-                announce("Learned send for $host: $selector")
+                announce("Learned $control for $host: $selector")
             }
         }
     }

@@ -11,9 +11,16 @@ import java.io.File
  * step; detection, health, waiting, and cancellation stay adapter-owned.
  */
 @Serializable
+data class LearnedControl(
+    val selector: String = "",
+    val updatedAt: Long = 0L
+)
+
+@Serializable
 data class LearnedControls(
     val sendSelector: String = "",
-    val updatedAt: Long = 0L
+    val updatedAt: Long = 0L,
+    val controls: Map<String, LearnedControl> = emptyMap()
 )
 
 class LearnedStore(
@@ -32,15 +39,32 @@ class LearnedStore(
         val file = fileFor(host)
         if (!file.isFile) return null
         return runCatching { json.decodeFromString<LearnedControls>(file.readText()) }
-            .getOrNull()?.takeIf { it.sendSelector.isNotBlank() }
+            .getOrNull()?.takeIf { it.sendSelector.isNotBlank() || it.controls.isNotEmpty() }
+    }
+
+    /** Named control (e.g. "send", "menu"). Migrates legacy send-only files. */
+    fun getControl(host: String, control: String): String? {
+        val controls = get(host) ?: return null
+        if (control == "send" && controls.sendSelector.isNotBlank()) {
+            return controls.sendSelector
+        }
+        return controls.controls[control]?.selector?.takeIf { it.isNotBlank() }
     }
 
     fun put(host: String, sendSelector: String) {
-        require(sendSelector.isNotBlank())
-        require(sendSelector.length <= 500)
+        putControl(host, "send", sendSelector)
+    }
+
+    fun putControl(host: String, control: String, selector: String) {
+        require(control.matches(Regex("[a-z]{1,16}")))
+        require(selector.isNotBlank())
+        require(selector.length <= 500)
         dir.mkdirs()
+        val current = get(host)
+        val merged = (current?.controls ?: emptyMap()) + (control to LearnedControl(selector, clock()))
+        val send = if (control == "send") selector else (current?.sendSelector ?: "")
         fileFor(host).writeText(
-            json.encodeToString(LearnedControls(sendSelector, clock()))
+            json.encodeToString(LearnedControls(send, clock(), merged))
         )
     }
 

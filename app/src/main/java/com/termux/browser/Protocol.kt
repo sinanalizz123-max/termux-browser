@@ -50,6 +50,7 @@ object ErrorCodes {
     const val PROVIDER_DISABLED = "PROVIDER_DISABLED"
     const val SUBMIT_UNCONFIRMED = "SUBMIT_UNCONFIRMED"
     const val CLICK_MISSED = "CLICK_MISSED"
+    const val LEARNED_CONTROL_MISSING = "LEARNED_CONTROL_MISSING"
 }
 
 @Serializable
@@ -91,6 +92,11 @@ data class ClickRequest(
 data class TapRequest(
     val x: Double = -1.0,
     val y: Double = -1.0
+)
+
+@Serializable
+data class TapControlRequest(
+    val control: String = ""
 )
 
 @Serializable

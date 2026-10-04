@@ -46,6 +46,39 @@ class LearnedStoreTest {
         store.clear("x.com")
         assertNull(store.get("x.com"))
     }
+
+    @Test
+    fun `named controls coexist per host`() {
+        val store = LearnedStore(folder.newFolder())
+        store.putControl("x.com", "send", "div.send")
+        store.putControl("x.com", "menu", "button.burger")
+        assertEquals("div.send", store.getControl("x.com", "send"))
+        assertEquals("button.burger", store.getControl("x.com", "menu"))
+        assertNull(store.getControl("x.com", "nope"))
+        assertNull(store.getControl("y.com", "send"))
+    }
+
+    @Test
+    fun `legacy send file migrates to named control`() {
+        // Old files carry only sendSelector; they must keep working.
+        val store = LearnedStore(folder.newFolder())
+        store.put("x.com", "div.send")
+        assertEquals("div.send", store.getControl("x.com", "send"))
+    }
+
+    @Test
+    fun `bad control names rejected`() {
+        val store = LearnedStore(folder.newFolder())
+        for (bad in listOf("", "Send", "send now", "x".repeat(17))) {
+            var threw = false
+            try {
+                store.putControl("x.com", bad, "div.a")
+            } catch (_: IllegalArgumentException) {
+                threw = true
+            }
+            assertTrue("must reject $bad", threw)
+        }
+    }
 }
 
 class LearnedSelectorsTest {
