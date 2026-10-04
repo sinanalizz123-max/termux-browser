@@ -106,6 +106,12 @@ data class ProbeRequest(
 )
 
 @Serializable
+data class DomRequest(
+    val root: String = "body",
+    val maxNodes: Int = 500
+)
+
+@Serializable
 data class PluginInstallRequest(
     val filename: String = "",
     val contentBase64: String = ""
@@ -172,10 +178,11 @@ object ProtocolLimits {
     const val MAX_QUERY_CHARS = 1000
     const val MAX_PROMPT_CHARS = 20000
     const val MAX_READ_CHARS = 50000
+    const val MAX_HTML_CHARS = 512 * 1024
     const val MAX_QUEUE = 16
     const val MAX_RESULTS = 32
     const val MAX_RESULT_BYTES = 256 * 1024
     const val RESULT_TTL_MS = 5 * 60 * 1000L
 
-    val READ_SCOPES = setOf("page", "title", "links", "visible_text", "selection", "main_content", "images")
+    val READ_SCOPES = setOf("page", "title", "links", "visible_text", "selection", "main_content", "images", "html")
 }

@@ -134,6 +134,7 @@ class LocalApiServer(
                     get("/debug/console") { handleDebugConsole() }
                     get("/debug/report") { handleDebugReport() }
                     post("/debug/probe") { handleDebugProbe() }
+                    post("/debug/dom") { handleDebugDom() }
                     get("/debug/events") { handleDebugEvents() }
                     get("/debug/commands") { handleDebugCommands() }
                     get("/debug/crashes") { handleDebugCrashes() }
@@ -510,6 +511,48 @@ class LocalApiServer(
         val key = if (request.rects) "rects" else "counts"
         call.respondText(
             """{"envelope":${json.encodeToString(envelope())},"$key":${raw ?: "null"}}""",
+            ContentType.Application.Json
+        )
+    }
+
+    /**
+     * DOM structure dump for control-finding: tags, ids, classes, roles,
+     * aria-labels, and rectangles — never text content, URLs, or input
+     * values, which can carry tokens. Breadth-first, hard node cap.
+     */
+    private suspend fun RoutingContext.handleDebugDom() {
+        if (!authorized() || rateLimited()) return
+        val text = readJsonBody() ?: return
+        val request = runCatching {
+            json.decodeFromString<DomRequest>(text)
+        }.getOrNull() ?: return error(ErrorCodes.INVALID_REQUEST, "Invalid dom request.")
+        if (request.root.isBlank() || request.root.length > 200) {
+            return error(ErrorCodes.INVALID_REQUEST, "Bad dom root.")
+        }
+        val maxNodes = request.maxNodes.coerceIn(1, 2000)
+        val script = "(function(){var maxN=$maxNodes;" +
+            "function node(el){var r={t:el.tagName||'?'};" +
+            "try{if(el.id)r.id=el.id.slice(0,80);}catch(_){}" +
+            "try{var c=Array.prototype.slice.call(el.classList||[],0,8).join(' ');if(c)r.c=c.slice(0,200);}catch(_){}" +
+            "try{var ro=el.getAttribute&&el.getAttribute('role');if(ro)r.ro=String(ro).slice(0,40);}catch(_){}" +
+            "try{var al=el.getAttribute&&el.getAttribute('aria-label');if(al)r.al=String(al).slice(0,120);}catch(_){}" +
+            "try{var tx='';var ch=el.childNodes;for(var i=0;i<ch.length;i++){if(ch[i].nodeType===3)tx+=ch[i].nodeValue;}" +
+            "tx=tx.replace(/\\s+/g,' ').trim();if(tx)r.tx=tx.slice(0,300);}catch(_){}" +
+            "try{var b=el.getBoundingClientRect();r.r=[Math.round(b.x),Math.round(b.y),Math.round(b.width),Math.round(b.height)];}catch(_){}" +
+            "try{r.k=el.childElementCount||0;}catch(_){}" +
+            "return r;}" +
+            "var out=[];var queue=[];" +
+            "try{var root=document.querySelector(" + json.encodeToString(request.root) + ");" +
+            "if(!root)return JSON.stringify({error:'no-root'});" +
+            "queue.push({el:root,d:0});}catch(_){return JSON.stringify({error:'bad-root'});}" +
+            "while(queue.length&&out.length<maxN){" +
+            "var cur=queue.shift();out.push(node(cur.el));" +
+            "if(cur.d<12){var ch=cur.el.children;" +
+            "for(var i=0;i<ch.length&&out.length<maxN;i++){queue.push({el:ch[i],d:cur.d+1});}}}" +
+            "return JSON.stringify({nodes:out});})()"
+        val raw = arbiter.debugEval(script)
+        call.respondText(
+            """{"envelope":${json.encodeToString(envelope())},"dom":${raw ?: "null"}}""",
             ContentType.Application.Json
         )
     }

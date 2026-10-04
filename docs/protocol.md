@@ -45,6 +45,20 @@ route, including WebSocket upgrade, requires the bearer token.
   coordinates validated, never treated as user takeover
 - `POST /v1/debug/probe` accepts `rects:true` to return element rectangles
   alongside counts (layout data only, never content)
+- `POST /v1/debug/dom` returns the element tree (tag/id/classes/role/
+  aria-label/own-text/rect/child-count, breadth-first, hard-capped)
+- `read` scope `html` returns full document markup (512 KB cap)
+
+## Security model: token means full access
+
+The bearer token grants complete page visibility: full text, full HTML,
+DOM with text, images, AI conversations — anything the page contains,
+including session tokens embedded in scripts. Guard the Termux token
+like a password: private config file, never pasted anywhere except the
+one-time pairing, never backed up to shared locations.
+Persisted surfaces (activity log, notifications, events, crash reports)
+remain metadata-only by design; page content flows only through live
+read responses, never into stored state.
 - `POST /v1/commands/ai-chat` — reserved in M0/M1, implemented M7+.
 - `POST /v1/commands/api-chat` — M10 provider API chat; same envelope and
   result semantics. Provider keys live app-side only and never cross the API.

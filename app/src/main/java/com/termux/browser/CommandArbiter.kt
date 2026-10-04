@@ -485,6 +485,15 @@ class CommandArbiter(
                     }.getOrNull()
                 } ?: emptyList()
             )
+            "html" -> {
+                val html = parsed?.get("html")?.jsonPrimitive?.content ?: ""
+                val cap = ProtocolLimits.MAX_HTML_CHARS
+                ReadResult(
+                    scope = cmd.scope,
+                    text = html.take(cap),
+                    truncated = html.length > cap
+                )
+            }
             else -> {
                 val text = parsed?.get("text")?.jsonPrimitive?.content ?: ""
                 ReadResult(

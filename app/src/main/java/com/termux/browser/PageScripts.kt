@@ -15,6 +15,8 @@ object PageScripts {
         "(function(){return JSON.stringify({text:(window.getSelection?window.getSelection().toString():'')})})()"
     const val IMAGES =
         "(function(){return JSON.stringify({images:Array.prototype.slice.call(document.images,0,200).map(function(m){return{src:m.currentSrc||m.src||'',alt:(m.alt||'').slice(0,200)}})})})()"
+    const val HTML =
+        "(function(){try{var h=document.documentElement?document.documentElement.outerHTML:'';return JSON.stringify({html:h})}catch(e){return JSON.stringify({html:''})}})()"
 
     /**
      * Fixed-shape click script. The selector travels only as a JSON string
@@ -43,6 +45,7 @@ object PageScripts {
         "selection" -> SELECTION
         "main_content" -> MAIN_CONTENT
         "images" -> IMAGES
+        "html" -> HTML
         else -> TEXT
     }
 }

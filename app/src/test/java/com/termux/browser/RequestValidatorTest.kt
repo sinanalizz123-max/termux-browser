@@ -42,6 +42,11 @@ class RequestValidatorTest {
     }
 
     @Test
+    fun `html is a valid read scope`() {
+        assertNull(RequestValidator.checkRead("html", 1000))
+    }
+
+    @Test
     fun `read scopes and bounds are enforced`() {
         assertEquals(ErrorCodes.INVALID_REQUEST, RequestValidator.checkRead("nope", 100))
         assertEquals(ErrorCodes.INVALID_REQUEST, RequestValidator.checkRead("page", 0))

@@ -558,6 +558,30 @@ class CommandArbiterTest {
     }
 
     @Test
+    fun `html scope returns full markup with truncation flag`() = runBlocking {
+        val big = "<html><body>" + "x".repeat(600000) + "</body></html>"
+        val inner = "{\"html\":\"" + big.replace("\"", "\\\"") + "\"}"
+        val host = FakeHost().apply {
+            // Real WebView outer-quotes the script's JSON string result.
+            evalResult = "\"" + inner.replace("\"", "\\\"") + "\""
+        }
+        val results = ResultStore()
+        val controller = BrowserController(host, ControlPolicy(), ActivityLog(), announce = {})
+        val arbiter = CommandArbiter(
+            this, ui(), host, controller, ControlPolicy(), results
+        )
+        try {
+            val submitted = arbiter.submit(BrowserCommand.Read("html", 1000))
+            val id = (submitted as SubmitResult.Accepted).commandId
+            val stored = awaitResult(results, id)
+            assertTrue(stored!!.body.contains("\"truncated\":true"))
+            assertTrue(stored.body.contains("x".repeat(100)))
+        } finally {
+            arbiter.close()
+        }
+    }
+
+    @Test
     fun `full queue answers queue-full`() = runBlocking {
         val host = FakeHost()
         val policy = ControlPolicy()

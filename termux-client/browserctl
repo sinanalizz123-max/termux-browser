@@ -331,6 +331,24 @@ def cmd_tap_control(args):
         cmd_result([cmd_id, "--wait", str(ns.wait)])
 
 
+def cmd_dom(args):
+    import argparse
+    p = argparse.ArgumentParser(prog="browserctl dom")
+    p.add_argument("--root", default="body")
+    p.add_argument("--max-nodes", type=int, default=500)
+    p.add_argument("--out", default="")
+    ns = p.parse_args(args)
+    code, body = api("POST", "/debug/dom",
+                     {"root": ns.root, "maxNodes": ns.max_nodes})
+    text = json.dumps(body, indent=1)
+    if ns.out:
+        with open(ns.out, "w") as f:
+            f.write(text)
+        print(f"saved {len(text)} chars to {ns.out}")
+    else:
+        print(text[:6000])
+
+
 def cmd_control(name):
     def run(_args):
         code, body = api("POST", f"/control/{name}")
@@ -463,6 +481,7 @@ COMMANDS = {
     "apichat": cmd_apichat,
     "debug": cmd_debug,
     "probe": cmd_probe,
+    "dom": cmd_dom,
     "plugin": cmd_plugin,
     "status": cmd_status,
     "open": cmd_open,

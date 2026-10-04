@@ -307,7 +307,8 @@ class LocalApiServerTest {
             "GET" to "/debug/recording",
             "POST" to "/control/recording",
             "POST" to "/commands/tap",
-            "POST" to "/commands/tap-control"
+            "POST" to "/commands/tap-control",
+            "POST" to "/debug/dom"
         )
         for ((method, path) in routes) {
             val code = codeOf(method, path, if (method == "POST") "{}" else null)
@@ -386,6 +387,13 @@ class LocalApiServerTest {
     fun `probe rects key present when requested`() {
         val (_, body) = post("/debug/probe", hex, """{"selectors":["a"],"rects":true}""")
         assertTrue(body.contains("\"rects\""))
+    }
+
+    @Test
+    fun `dom endpoint answers with node list`() {
+        val (code, body) = post("/debug/dom", hex, """{"root":"body","maxNodes":10}""")
+        assertEquals(200, code)
+        assertTrue(body.contains("\"dom\""))
     }
 
     @Test
