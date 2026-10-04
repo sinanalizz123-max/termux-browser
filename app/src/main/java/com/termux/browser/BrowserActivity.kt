@@ -329,7 +329,9 @@ class BrowserActivity : Activity(), PageHost {
             mapOf("openai" to OpenAiProvider(productionApiClient()))
         )
         pluginStore = PluginStore(java.io.File(filesDir, "plugins"))
-        val pluginRegistry = AdapterRegistry(baseAdapters() + pluginAdapters(pluginStore))
+        // Plugins lead: a signed plugin overrides the built-in adapter for
+        // its hosts. Otherwise pushes would install yet never take effect.
+        val pluginRegistry = AdapterRegistry(pluginAdapters(pluginStore) + baseAdapters())
         arbiter = CommandArbiter(
             activityScope, uiRunner, this, controller, policy, results, bus,
             registry = pluginRegistry,
@@ -375,7 +377,7 @@ class BrowserActivity : Activity(), PageHost {
             pluginStore = pluginStore,
             pluginRootKey = pluginKey,
             onPluginsChanged = {
-                pluginRegistry.updateAdapters(baseAdapters() + pluginAdapters(pluginStore))
+                pluginRegistry.updateAdapters(pluginAdapters(pluginStore) + baseAdapters())
                 announce("Plugin set updated.")
             }
         )
