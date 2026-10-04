@@ -191,6 +191,46 @@ class AiChatArbiterTest {
     }
 
     @Test
+    fun `learned submit selector leads the submit script`() = runBlocking {
+        val host = FakeHost()
+        host.snapshots.add(healthy())
+        val results = ResultStore()
+        val dir = java.io.File(
+            System.getProperty("java.io.tmpdir"),
+            "tb-learn-${System.nanoTime()}"
+        )
+        dir.mkdirs()
+        try {
+            val learned = com.termux.browser.ai.LearnedStore(dir)
+            learned.put("chatgpt.com", "div.learned-send")
+            val policy = ControlPolicy()
+            val controller = BrowserController(host, policy, ActivityLog(), announce = {})
+            val ui = object : UiRunner {
+                override suspend fun <T> run(block: suspend () -> T): T = block()
+            }
+            val arbiter = CommandArbiter(
+                this, ui, host, controller, policy, results,
+                registry = AdapterRegistry(listOf(ChatGPTAdapter(), GenericAdapter())),
+                learnedStore = learned
+            )
+            try {
+                val submitted = arbiter.submit(
+                    BrowserCommand.AiChat("chatgpt", "Hi.", 100, "termux")
+                )
+                val id = (submitted as SubmitResult.Accepted).commandId
+                awaitResult(results, id)
+                val submitScript = host.scripts.firstOrNull { it.contains("window.__tbPrompt=") }
+                assertTrue(submitScript != null)
+                assertTrue(submitScript!!.contains("div.learned-send"))
+            } finally {
+                arbiter.close()
+            }
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    @Test
     fun `generation advance during wait cancels`() = runBlocking {
         val host = FakeHost()
         host.snapshots.addAll(

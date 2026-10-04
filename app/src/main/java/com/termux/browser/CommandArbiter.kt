@@ -3,6 +3,9 @@ package com.termux.browser
 import com.termux.browser.ai.AdapterRegistry
 import com.termux.browser.ai.AiApiRunner
 import com.termux.browser.ai.GenericAdapter
+import com.termux.browser.ai.LearnedAdapter
+import com.termux.browser.ai.LearnedStore
+import com.termux.browser.EventTypes
 import com.termux.browser.ai.JsPrompt
 import com.termux.browser.ai.ResponseWaiter
 import com.termux.browser.ai.Snapshot
@@ -65,6 +68,7 @@ class CommandArbiter(
     private val results: ResultStore,
     private val bus: EventBus = EventBus(),
     private val registry: AdapterRegistry = AdapterRegistry(listOf(GenericAdapter())),
+    private val learnedStore: LearnedStore? = null,
     private val apiRunner: AiApiRunner? = null,
     private val onWorkChanged: (Boolean) -> Unit = {},
     private val json: Json = Json { ignoreUnknownKeys = true }
@@ -189,13 +193,22 @@ class CommandArbiter(
         }
         val pageUrl = ui.run { host.currentUrl() }
             ?: return failed(ErrorCodes.INVALID_REQUEST)
-        val adapter = registry.detect(pageUrl)
+        val detected = registry.detect(pageUrl)
         // Fail closed: unknown page or generic fallback never submits.
-        if (adapter == null || adapter.hosts.isEmpty()) {
+        if (detected == null || detected.hosts.isEmpty()) {
             return failed(ErrorCodes.ADAPTER_UNRECOGNIZED)
         }
-        if (cmd.site.isNotBlank() && adapter.id != cmd.site) {
+        if (cmd.site.isNotBlank() && detected.id != cmd.site) {
             return failed(ErrorCodes.INVALID_REQUEST)
+        }
+        // Learn mode upgrade: a user-taught send selector leads, with
+        // detection/health/waiting still owned by the base adapter.
+        val learned = learnedStore?.get(registry.hostOf(pageUrl))?.sendSelector
+        val adapter = if (!learned.isNullOrBlank()) {
+            bus.publish(EventTypes.LEARNED_OVERRIDE, detail = registry.hostOf(pageUrl))
+            LearnedAdapter(detected, learned)
+        } else {
+            detected
         }
         // Health gate on a fresh snapshot: confirmed controls or nothing.
         val probe = ui.run { host.evalJs(adapter.snapshotScript()) }

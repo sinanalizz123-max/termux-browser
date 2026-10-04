@@ -47,6 +47,7 @@ object EventTypes {
     const val BROWSER_LOADING_FINISHED = "browser.loading_finished"
     const val BROWSER_ERROR = "browser.error"
     const val HISTORY_GAP = "history_gap"
+    const val LEARNED_OVERRIDE = "learned.override"
 }
 
 class EventBus(

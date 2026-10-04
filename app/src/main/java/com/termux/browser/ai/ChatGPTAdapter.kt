@@ -55,22 +55,9 @@ class ChatGPTAdapter : SiteAdapter {
      * message/generating observation and a login-wall heuristic.
      */
     override fun snapshotScript(): String {
-        val json = kotlinx.serialization.json.Json
-        val prompt = json.encodeToString(PROMPT_CANDIDATES)
-        val messages = json.encodeToString(MESSAGE_CANDIDATES)
-        val stop = json.encodeToString(STOP_CANDIDATES)
-        val submit = json.encodeToString(SUBMIT_CANDIDATES)
-        return "(function(){function any(L){for(var k=0;k<L.length;k++){try{if(document.querySelector(L[k]))return true;}catch(e){}}return false;}" +
-            "function first(L){for(var k=0;k<L.length;k++){try{var e=document.querySelector(L[k]);if(e)return e;}catch(_){}}return null;}" +
-            "var P=$prompt;var M=$messages;var S=$stop;var U=$submit;" +
-            "var nodes=[];for(var k=0;k<M.length;k++){try{var f=document.querySelectorAll(M[k]);for(var j=0;j<f.length;j++){nodes.push(f[j]);}}catch(e){}}" +
-            "var last=nodes.length?nodes[nodes.length-1].innerText:'';" +
-            "var body=(document.body?document.body.innerText:'').slice(0,2000);" +
-            "var pe=first(P);var promptFound=!!pe;" +
-            "var composerKind=!pe?'none':((pe.tagName==='TEXTAREA'||pe.tagName==='INPUT')?'textarea':(pe.isContentEditable?'contenteditable':'unknown'));" +
-            "return JSON.stringify({messageCount:nodes.length,lastText:(last||'').slice(-4000)," +
-            "promptFound:promptFound,submitFound:any(U),generating:any(S),composerKind:composerKind," +
-            "loginRequired:!promptFound&&/log\\s*in|sign\\s*up/i.test(body)})})()"
+        return buildSnapshotScript(
+            PROMPT_CANDIDATES, MESSAGE_CANDIDATES, STOP_CANDIDATES, SUBMIT_CANDIDATES
+        )
     }
 
     override fun health(snapshot: Snapshot, url: String): AdapterHealth {

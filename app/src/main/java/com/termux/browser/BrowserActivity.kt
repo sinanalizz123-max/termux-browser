@@ -14,6 +14,7 @@ import android.widget.Button
 import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.ProgressBar
+import android.widget.Switch
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -71,6 +72,11 @@ class BrowserActivity : Activity(), PageHost {
      * background automation without real queued work.
      */
     internal var automationActiveOverride: Boolean? = null
+
+    private val learnedStore by lazy {
+        com.termux.browser.ai.LearnedStore(java.io.File(filesDir, "learned"))
+    }
+    internal var learnMode = false
     private val activityScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val uiRunner = object : UiRunner {
         override suspend fun <T> run(block: suspend () -> T): T =
@@ -246,8 +252,23 @@ class BrowserActivity : Activity(), PageHost {
             text = "API keys"
             contentDescription = "Manage provider API keys"
         }
+        val learnHeader = TextView(this).apply {
+            text = "Learn mode: tap a send button to teach it"
+            textSize = 14f
+            setPadding(0, dp(12), 0, dp(4))
+        }
+        val learnSwitch = Switch(this).apply {
+            text = "Learn mode"
+            contentDescription = "Toggle learn mode"
+            setOnCheckedChangeListener { _, checked ->
+                learnMode = checked
+                announce(if (checked) "LEARN MODE: tap the send button." else "Learn mode off.")
+            }
+        }
         pane.addView(pair)
         pane.addView(apiKeys)
+        pane.addView(learnHeader)
+        pane.addView(learnSwitch)
         drawerLayout.addView(
             pane,
             androidx.drawerlayout.widget.DrawerLayout.LayoutParams(
@@ -289,6 +310,9 @@ class BrowserActivity : Activity(), PageHost {
                 policy.onUserInput()
                 announce("User browsing.")
             }
+            if (event.action == MotionEvent.ACTION_UP && learnMode) {
+                recordLearnTap(event.x, event.y)
+            }
             false
         }
 
@@ -308,7 +332,7 @@ class BrowserActivity : Activity(), PageHost {
             registry = AdapterRegistry(
                 listOf(ChatGPTAdapter(), DeepSeekAdapter(), GenericAdapter())
             ),
-            apiRunner = apiRunner,
+            learnedStore = learnedStore,
             onWorkChanged = { active -> onAutomationWorkChanged(active) }
         )
         apiToken = TokenStore(filesDir, tokenCryptoOverride ?: KeystoreTokenCrypto())
@@ -507,6 +531,39 @@ class BrowserActivity : Activity(), PageHost {
             .create()
         dialog.setOnDismissListener { input.text.clear() }
         dialog.show()
+    }
+
+    /**
+     * Learn mode recorder: maps the user's tap to the element beneath it
+     * and stores the derived send selector for the current host. Position
+     * and structure only — no page content is ever read or stored.
+     */
+    private fun recordLearnTap(xPx: Float, yPx: Float) {
+        val host = currentHost() ?: return
+        activityScope.launch(Dispatchers.IO) {
+            val scale = webView.scale
+            if (!scale.isFinite() || scale <= 0f) return@launch
+            val raw = runCatching {
+                evalJs(
+                    com.termux.browser.ai.elementProbeScript(
+                        (xPx / scale).toDouble(),
+                        (yPx / scale).toDouble()
+                    )
+                )
+            }.getOrNull()
+            val info = com.termux.browser.ai.parseElementInfo(raw) ?: return@launch
+            val selector = com.termux.browser.ai.LearnedSelectors.derive(info) ?: return@launch
+            learnedStore.put(host, selector)
+            withContext(Dispatchers.Main) {
+                announce("Learned send for $host: $selector")
+            }
+        }
+    }
+
+    private fun currentHost(): String? {
+        val url = webView.url ?: return null
+        return url.substringAfter("://", url).substringBefore('/').lowercase()
+            .takeIf { it.isNotBlank() }
     }
 
     private fun currentReport(): DebugReport {

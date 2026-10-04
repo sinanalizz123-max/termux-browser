@@ -39,6 +39,9 @@ interface SiteAdapter {
     /** Static, zero-parameter snapshot script returning Snapshot JSON. */
     fun snapshotScript(): String
 
+    /** Optional provider-identity marker selector for the snapshot report. */
+    fun markerSelector(): String? = null
+
     /**
      * Deterministic, side-effect-free health from a snapshot. Default fails
      * closed: only recognized adapters with confirmed controls pass.
@@ -71,6 +74,71 @@ class AdapterRegistry(adapters: List<SiteAdapter>) {
         val withoutScheme = url.substringAfter("://", url)
         return withoutScheme.substringBefore('/').substringBefore('?').lowercase()
     }
+}
+
+/**
+ * Shared static snapshot script builder. Candidate lists are JSON data
+ * baked into a fixed script shape — never string-concatenated code.
+ * An optional provider marker selector adds markerFound to the report.
+ */
+fun buildSnapshotScript(
+    prompt: List<String>,
+    messages: List<String>,
+    stop: List<String>,
+    submit: List<String>,
+    markerSelector: String? = null
+): String {
+    val json = kotlinx.serialization.json.Json
+    val p = json.encodeToString(prompt)
+    val m = json.encodeToString(messages)
+    val s = json.encodeToString(stop)
+    val u = json.encodeToString(submit)
+    val marker = if (markerSelector != null) {
+        "markerFound:!!document.querySelector(${json.encodeToString(markerSelector)}),"
+    } else {
+        ""
+    }
+    return "(function(){function any(L){for(var k=0;k<L.length;k++){try{if(document.querySelector(L[k]))return true;}catch(e){}}return false;}" +
+        "function first(L){for(var k=0;k<L.length;k++){try{var e=document.querySelector(L[k]);if(e)return e;}catch(_){}}return null;}" +
+        "var P=$p;var M=$m;var S=$s;var U=$u;" +
+        "var nodes=[];for(var k=0;k<M.length;k++){try{var f=document.querySelectorAll(M[k]);for(var j=0;j<f.length;j++){nodes.push(f[j]);}}catch(e){}}" +
+        "var last=nodes.length?nodes[nodes.length-1].innerText:'';" +
+        "var body=(document.body?document.body.innerText:'').slice(0,2000);" +
+        "var pe=first(P);var promptFound=!!pe;" +
+        "var composerKind=!pe?'none':((pe.tagName==='TEXTAREA'||pe.tagName==='INPUT')?'textarea':(pe.isContentEditable?'contenteditable':'unknown'));" +
+        "return JSON.stringify({messageCount:nodes.length,lastText:(last||'').slice(-4000)," +
+        "promptFound:promptFound,submitFound:any(U),generating:any(S),composerKind:composerKind,$marker" +
+        "loginRequired:!promptFound&&/log\\s*in|sign\\s*up/i.test(body)})})()"
+}
+
+/**
+ * Learned override: a base adapter whose submit candidates lead with a
+ * user-taught selector. Detection, health, waiting, and cancellation stay
+ * base-owned; only the submit list is upgraded.
+ */
+class LearnedAdapter(
+    private val base: SiteAdapter,
+    learnedSubmit: String
+) : SiteAdapter {
+    override val id = base.id
+    override val hosts = base.hosts
+
+    private val merged = (listOf(learnedSubmit) + base.selectors().submit).distinct()
+
+    override fun detect(url: String): Boolean = base.detect(url)
+    override fun selectors(): SelectorSet = base.selectors().copy(submit = merged)
+    override fun snapshotScript(): String {
+        val selectors = base.selectors()
+        return buildSnapshotScript(
+            selectors.prompt, selectors.messages, selectors.stop, merged,
+            base.markerSelector()
+        )
+    }
+
+    override fun markerSelector(): String? = base.markerSelector()
+
+    override fun health(snapshot: Snapshot, url: String): AdapterHealth =
+        base.health(snapshot, url)
 }
 
 /**
