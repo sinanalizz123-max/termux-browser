@@ -114,6 +114,18 @@ class BrowserController(
         announce("Page ready: ${UrlPolicy.forDisplay(url)}")
     }
 
+    /**
+     * Renderer-process death (the usual "app just vanished" on low-memory
+     * phones). Recorded as an error and recovered by reload instead of
+     * letting the whole app die with the renderer.
+     */
+    fun onRenderProcessGone(didCrash: Boolean) {
+        val detail = "gen=${policy.generation} crashed=$didCrash ${host.currentUrl() ?: ""}"
+        log.add("system", "renderer_gone", detail)
+        bus.publish(EventTypes.BROWSER_ERROR, detail = "renderer_gone $detail")
+        announce("Page process died — reloading.")
+    }
+
     fun onPageError(url: String, description: String) {
         log.add("system", "page_error", "gen=${policy.generation} ${UrlPolicy.forDisplay(url)} :: ${description.take(200)}")
         bus.publish(EventTypes.BROWSER_ERROR, detail = "$url :: ${description.take(200)}")

@@ -165,9 +165,11 @@ def cmd_apichat(args):
 def cmd_debug(args):
     import argparse
     p = argparse.ArgumentParser(prog="browserctl debug")
-    p.add_argument("what", choices=["console", "report", "events", "commands"])
+    p.add_argument("what", choices=["console", "report", "events", "commands",
+                                    "recording", "crashes", "crash"])
     p.add_argument("--last", type=int, default=20)
     p.add_argument("--since", type=int, default=0)
+    p.add_argument("extra", nargs="*")
     ns = p.parse_args(args)
     if ns.what == "report":
         code, body = api("GET", "/debug/report")
@@ -180,6 +182,29 @@ def cmd_debug(args):
     if ns.what == "commands":
         code, body = api("GET", "/debug/commands")
         print(json.dumps(body, indent=2))
+        return
+    if ns.what == "recording":
+        # debug recording on|off|show
+        mode = (ns.extra or ["show"])[0]
+        if mode in ("on", "off"):
+            code, body = api("POST", "/control/recording",
+                             {"enabled": mode == "on"})
+            print(json.dumps(body, indent=2))
+            return
+        code, body = api("GET", f"/debug/recording?since={ns.since}")
+        entries = body.get("entries", [])
+        print(json.dumps(entries[-ns.last:], indent=2))
+        return
+    if ns.what == "crashes":
+        code, body = api("GET", "/debug/crashes")
+        print(json.dumps(body, indent=2))
+        return
+    if ns.what == "crash":
+        if not ns.extra:
+            print("usage: browserctl debug crash <name>", file=sys.stderr)
+            sys.exit(2)
+        code, body = api("GET", f"/debug/crashes/{ns.extra[0]}")
+        print(body.get("text", json.dumps(body, indent=2)))
         return
     code, body = api("GET", f"/debug/console?since={ns.since}")
     events = body.get("events", [])

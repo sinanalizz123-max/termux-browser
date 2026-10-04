@@ -67,6 +67,7 @@ class LocalApiServer(
     private val bus: EventBus = EventBus(),
     private val debugLog: ActivityLog = ActivityLog(),
     private val reportProvider: suspend () -> DebugReport = { DebugReport() },
+    private val crashRoot: java.io.File? = null,
     private val json: Json = Json {
         ignoreUnknownKeys = true
         explicitNulls = false
@@ -122,6 +123,10 @@ class LocalApiServer(
                     post("/debug/probe") { handleDebugProbe() }
                     get("/debug/events") { handleDebugEvents() }
                     get("/debug/commands") { handleDebugCommands() }
+                    get("/debug/crashes") { handleDebugCrashes() }
+                    get("/debug/crashes/{name}") { handleDebugCrashFile() }
+                    get("/debug/recording") { handleDebugRecording() }
+                    post("/control/recording") { handleRecordingToggle() }
                 }
             }
             }
@@ -470,6 +475,7 @@ class LocalApiServer(
         // Manual JSON like /v1/activity: every field always present, so a
         // serializer configuration can never silently drop report fields.
         val lastCrash = report.lastCrash?.let { json.encodeToString(it) } ?: "null"
+        val latestCrash = report.latestCrash?.let { json.encodeToString(it) } ?: "null"
         val body = """{"envelope":${json.encodeToString(envelope())},""" +
             """"uptimeMs":${report.uptimeMs},""" +
             """"pendingCommands":${report.pendingCommands},""" +
@@ -478,8 +484,75 @@ class LocalApiServer(
             """"webViewVersion":${json.encodeToString(report.webViewVersion)},""" +
             """"heapUsedMb":${report.heapUsedMb},""" +
             """"heapMaxMb":${report.heapMaxMb},""" +
-            """"lastCrash":$lastCrash}"""
+            """"lastCrash":$lastCrash,""" +
+            """"previousCrashes":${report.previousCrashes},""" +
+            """"latestCrash":$latestCrash}"""
         call.respondText(body, ContentType.Application.Json)
+    }
+
+    /** Durable crash files from previous runs (full text). */
+    private suspend fun RoutingContext.handleDebugCrashes() {
+        if (!authorized()) return
+        val names = crashRoot?.let { CrashFiles.list(it) } ?: emptyList()
+        val items = names.joinToString(",") { json.encodeToString(it) }
+        call.respondText(
+            """{"envelope":${json.encodeToString(envelope())},"crashes":[$items]}""",
+            ContentType.Application.Json
+        )
+    }
+
+    private suspend fun RoutingContext.handleDebugCrashFile() {
+        if (!authorized()) return
+        val root = crashRoot
+        val name = call.parameters["name"] ?: ""
+        val text = root?.let { CrashFiles.read(it, name) }
+        if (text == null) {
+            val body = ApiErrorBody(
+                envelope(), ErrorDetail(ErrorCodes.NOT_FOUND, "No such crash report.")
+            )
+            call.respondText(
+                json.encodeToString(body),
+                ContentType.Application.Json,
+                HttpStatusCode.NotFound
+            )
+            return
+        }
+        call.respondText(
+            """{"envelope":${json.encodeToString(envelope())},"name":${json.encodeToString(name)},"text":${json.encodeToString(text)}}""",
+            ContentType.Application.Json
+        )
+    }
+
+    /** Full recording buffer as text: the whole captured log in one call. */
+    private suspend fun RoutingContext.handleDebugRecording() {
+        if (!authorized()) return
+        val since = call.request.queryParameters["since"]?.toLongOrNull() ?: 0L
+        val entries = Recorder.since(since)
+        val items = entries.joinToString(",") {
+            """{"id":${it.id},"timestamp":${it.timestamp},"kind":${json.encodeToString(it.kind)},"text":${json.encodeToString(it.text)}}"""
+        }
+        call.respondText(
+            """{"envelope":${json.encodeToString(envelope())},"recording":${Recorder.enabled},"entries":[$items]}""",
+            ContentType.Application.Json
+        )
+    }
+
+    private suspend fun RoutingContext.handleRecordingToggle() {
+        if (!authorized()) return
+        val text = readJsonBody() ?: return
+        val request = runCatching {
+            json.decodeFromString<RecordingRequest>(text)
+        }.getOrNull() ?: return error(ErrorCodes.INVALID_REQUEST, "Invalid recording request.")
+        if (request.enabled) {
+            // Fresh capture every start; stopping keeps history for export.
+            Recorder.clear()
+        }
+        Recorder.enabled = request.enabled
+        log.add("termux", "recording", if (request.enabled) "started" else "stopped")
+        call.respondText(
+            """{"envelope":${json.encodeToString(envelope())},"recording":${Recorder.enabled}}""",
+            ContentType.Application.Json
+        )
     }
 
     /**

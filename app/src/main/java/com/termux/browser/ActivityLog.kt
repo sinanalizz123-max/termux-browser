@@ -35,6 +35,7 @@ class ActivityLog(
             action = action,
             detail = trimmed
         )
+        Recorder.record("activity", "$source/$action: $trimmed")
         events.addLast(event)
         bytes += trimmed.length
         while (events.size > maxEvents || bytes > maxBytes) {

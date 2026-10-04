@@ -102,7 +102,14 @@ data class DebugReport(
     val webViewVersion: String = "unknown",
     val heapUsedMb: Long = 0,
     val heapMaxMb: Long = 0,
-    val lastCrash: String? = null
+    val lastCrash: String? = null,
+    val previousCrashes: Int = 0,
+    val latestCrash: String? = null
+)
+
+@Serializable
+data class RecordingRequest(
+    val enabled: Boolean = false
 )
 
 @Serializable

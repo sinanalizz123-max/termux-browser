@@ -45,6 +45,15 @@ class BrowserControllerTest {
     }
 
     @Test
+    fun `renderer death is recorded and announced`() {
+        val announced = mutableListOf<String>()
+        val (controller, _, log) = controller(announced = announced)
+        controller.onRenderProcessGone(true)
+        assertTrue(announced.any { it.contains("Page process died") })
+        assertTrue(log.since(0).any { it.action == "renderer_gone" })
+    }
+
+    @Test
     fun `stale page finish after user navigation is ignored`() {
         val host = FakeHost()
         val announced = mutableListOf<String>()

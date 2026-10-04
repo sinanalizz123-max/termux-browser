@@ -337,11 +337,30 @@ class BrowserActivity : Activity(), PageHost {
         )
         apiToken = TokenStore(filesDir, tokenCryptoOverride ?: KeystoreTokenCrypto())
             .getOrCreate()
+        val previousCrashes = CrashFiles.list(filesDir)
+        if (previousCrashes.isNotEmpty()) {
+            lastCrash.set("previous run crashed (${previousCrashes.size} report(s))")
+        }
         val previousCrashHandler = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, error ->
             val summary = "${error.javaClass.name}: ${(error.message ?: "").take(200)}"
             lastCrash.set(summary)
             debugLog.add("crash", error.javaClass.name, "${thread.name}: ${summary.take(200)}")
+            // Durable forensics FIRST: the process may not survive this.
+            runCatching {
+                val stack = error.stackTrace.take(40).joinToString("\n") { "  at $it" }
+                CrashFiles.write(
+                    filesDir, summary, mapOf(
+                        "stack" to "${error.javaClass.name}: ${error.message}\n$stack",
+                        "activity" to log.since(0).takeLast(100).joinToString("\n") {
+                            "[${it.source}] ${it.action}: ${it.detail}"
+                        },
+                        "console" to debugLog.since(0).takeLast(50).joinToString("\n") {
+                            "[${it.source}] ${it.action}: ${it.detail}"
+                        }
+                    )
+                )
+            }
             previousCrashHandler?.uncaughtException(thread, error)
         }
         val api = LocalApiServer(
@@ -349,7 +368,8 @@ class BrowserActivity : Activity(), PageHost {
             statusProvider = { currentStatus() },
             bus = bus,
             debugLog = debugLog,
-            reportProvider = { currentReport() }
+            reportProvider = { currentReport() },
+            crashRoot = filesDir
         )
         server = api
         activityScope.launch {
@@ -570,6 +590,7 @@ class BrowserActivity : Activity(), PageHost {
         val runtime = Runtime.getRuntime()
         val usedMb = (runtime.totalMemory() - runtime.freeMemory()) / (1024 * 1024)
         val maxMb = runtime.maxMemory() / (1024 * 1024)
+        val crashes = CrashFiles.list(filesDir)
         return DebugReport(
             uptimeMs = System.currentTimeMillis() - startTime,
             pendingCommands = arbiter.pendingCount(),
@@ -578,7 +599,9 @@ class BrowserActivity : Activity(), PageHost {
             webViewVersion = webViewVersion,
             heapUsedMb = usedMb,
             heapMaxMb = maxMb,
-            lastCrash = lastCrash.get()
+            lastCrash = lastCrash.get(),
+            previousCrashes = crashes.size,
+            latestCrash = crashes.firstOrNull()
         )
     }
 
@@ -764,6 +787,15 @@ class BrowserActivity : Activity(), PageHost {
                 if (request.isForMainFrame) {
                     controller.onPageError(request.url.toString(), error.description.toString())
                 }
+            }
+
+            override fun onRenderProcessGone(
+                view: WebView,
+                detail: android.webkit.RenderProcessGoneDetail
+            ): Boolean {
+                controller.onRenderProcessGone(detail.didCrash())
+                view.reload()
+                return true
             }
         }
         webView.webChromeClient = object : android.webkit.WebChromeClient() {

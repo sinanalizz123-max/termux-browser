@@ -91,6 +91,10 @@ class EventBus(
             created
         }
         mutableLive.tryEmit(event)
+        Recorder.record(
+            "event",
+            "${event.type} ${event.commandId ?: ""} ${event.state ?: ""}".trim()
+        )
         return event
     }
 

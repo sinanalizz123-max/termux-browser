@@ -302,7 +302,10 @@ class LocalApiServerTest {
             "GET" to "/debug/console",
             "GET" to "/debug/report",
             "GET" to "/debug/events",
-            "GET" to "/debug/commands"
+            "GET" to "/debug/commands",
+            "GET" to "/debug/crashes",
+            "GET" to "/debug/recording",
+            "POST" to "/control/recording"
         )
         for ((method, path) in routes) {
             val code = codeOf(method, path, if (method == "POST") "{}" else null)
@@ -346,6 +349,28 @@ class LocalApiServerTest {
         val (commandsCode, commandsBody) = get("/debug/commands", hex)
         assertEquals(200, commandsCode)
         assertTrue(commandsBody.contains("\"results\""))
+    }
+
+    @Test
+    fun `recording toggles and exports`() {
+        val (_, off) = post("/control/recording", hex, """{"enabled":false}""")
+        assertTrue(off.contains("\"recording\":false"))
+        val (_, on) = post("/control/recording", hex, """{"enabled":true}""")
+        assertTrue(on.contains("\"recording\":true"))
+        val (_, shown) = get("/debug/recording?since=0", hex)
+        assertTrue(shown.contains("\"entries\""))
+        post("/control/recording", hex, """{"enabled":false}""")
+    }
+
+    @Test
+    fun `crash files list and read`() {
+        val (emptyCode, emptyBody) = get("/debug/crashes", hex)
+        assertEquals(200, emptyCode)
+        assertTrue(emptyBody.contains("\"crashes\""))
+        val (missingCode, _) = get("/debug/crashes/nope.txt", hex)
+        assertEquals(404, missingCode)
+        val (evilCode, _) = get("/debug/crashes/../evil", hex)
+        assertEquals(404, evilCode)
     }
 
     @Test
