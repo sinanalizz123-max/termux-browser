@@ -227,6 +227,10 @@ class CommandArbiter(
                     return SnapshotParser.parse(raw) ?: Snapshot()
                 }
             }
+            // Same-host path changes after submit are normal app flow
+            // (e.g. ChatGPT navigating to /c/<id> for the new chat). Only
+            // a host change means the user actually went elsewhere.
+            val startHost = registry.hostOf(startUrl)
             val outcome = ResponseWaiter(
                 snapshots = provider,
                 exited = {
@@ -234,7 +238,7 @@ class CommandArbiter(
                         when {
                             policy.state == ControlState.STOPPED -> "CANCELLED"
                             policy.generation != startGen -> "USER_TAKEOVER"
-                            host.currentUrl() != startUrl -> "NAVIGATION_CHANGED"
+                            registry.hostOf(host.currentUrl() ?: "") != startHost -> "NAVIGATION_CHANGED"
                             else -> null
                         }
                     }
