@@ -71,7 +71,11 @@ object JsPrompt {
             "if(!pe){R.reason='no-prompt';return JSON.stringify(R);}" +
             fillBody() +
             "var se=null;for(var j=0;j<S.length;j++){if(${submitIndex}>=0&&j!=${submitIndex})continue;" +
-            "try{var b=document.querySelector(S[j]);if(b){se=b;R.submitIndex=j;break;}}catch(_){}}" +
+            "try{var q=S[j];var last=false;" +
+            "if(q.indexOf('LAST:')===0){q=q.slice(5);last=true;}" +
+            "var b=null;if(last){var all=document.querySelectorAll(q);if(all.length)b=all[all.length-1];}" +
+            "else{b=document.querySelector(q);}" +
+            "if(b){se=b;R.submitIndex=j;break;}}catch(_){}}" +
             "if(se){se.click();R.submitted=true;R.method='button';}" +
             "else{" +
             "function key(t){var e=new KeyboardEvent(t,{key:'Enter',code:'Enter',bubbles:true,cancelable:true});" +

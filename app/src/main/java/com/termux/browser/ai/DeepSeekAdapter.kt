@@ -24,7 +24,10 @@ class DeepSeekAdapter : SiteAdapter {
         // DeepSeek renders zero <button> elements: the send control is the
         // empty div adjacent to the composer textarea (CSS-icon button).
         // Structural candidate first; semantic button fallbacks after.
+        // Live-verified: the send control is the rightmost role=button in
+        // the composer row. LAST: picks the last match instead of first.
         val SUBMIT_CANDIDATES = listOf(
+            "LAST:div:has(> textarea) + div div[role='button']",
             "div:has(> textarea) + div",
             "button[type='submit']",
             "button[aria-label*='Send']",

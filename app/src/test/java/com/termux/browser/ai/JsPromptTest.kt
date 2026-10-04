@@ -58,6 +58,14 @@ class JsPromptTest {
     }
 
     @Test
+    fun `last-prefix picks the final match`() {
+        val script = JsPrompt.submitScript("\"hi\"", "[\"textarea\"]", "[\"LAST:div x\"]")
+        assertTrue(script.contains("LAST:"))
+        assertTrue(script.contains("querySelectorAll"))
+        assertTrue(script.contains("all[all.length-1]"))
+    }
+
+    @Test
     fun `candidate indices are baked as integers`() {
         val script = JsPrompt.submitScript("\"hi\"", "[\"a\"]", "[\"b\"]", 2, 1)
         assertTrue(script.contains("k!=2"))
