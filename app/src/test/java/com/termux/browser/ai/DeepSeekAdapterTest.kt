@@ -57,6 +57,15 @@ class DeepSeekAdapterTest {
     }
 
     @Test
+    fun `structural send candidate leads the submit set`() {
+        // Live-probed reality: zero <button> elements; the send control is
+        // the empty div adjacent to the composer textarea.
+        val submit = adapter.selectors().submit
+        assertTrue(submit.first().contains("textarea"))
+        assertTrue(submit.first().contains("+ div"))
+    }
+
+    @Test
     fun `composer candidates cover textarea and contenteditable`() {
         val joined = adapter.selectors().prompt.joinToString(" ")
         assertTrue(joined.contains("textarea"))
