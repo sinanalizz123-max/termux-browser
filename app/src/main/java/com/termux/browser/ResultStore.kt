@@ -12,7 +12,9 @@ data class StoredResult(
 
 class ResultStore(
     private val maxCount: Int = ProtocolLimits.MAX_RESULTS,
-    private val maxBytes: Int = ProtocolLimits.MAX_RESULT_BYTES,
+    // Must exceed the largest single payload (html scope: 512 KB),
+    // otherwise big results self-evict on store and vanish.
+    private val maxBytes: Int = 1024 * 1024,
     private val ttlMs: Long = ProtocolLimits.RESULT_TTL_MS,
     private val clock: () -> Long = System::currentTimeMillis
 ) {
