@@ -50,7 +50,7 @@ class PluginArbiterTest {
     }
 
     private fun healthy(text: String = "old") =
-        """{"messageCount":2,"lastText":"$text","generating":false,"promptFound":true,"submitFound":true,"markerFound":true}"""
+        """{"messageCount":2,"lastText":"$text","generating":false,"promptFound":true,"submitFound":true,"markerFound":true,"composerEmpty":true}"""
 
     @Test
     fun `plugin adapter completes a scripted chat`() = runBlocking {
