@@ -259,6 +259,68 @@ class AiChatArbiterTest {
     }
 
     @Test
+    fun `learned send uses fill plus native tap`() = runBlocking {
+        val host = FakeHost()
+        host.snapshots.add(healthy())
+        var tappedAt: Pair<Double, Double>? = null
+        val tappingHost = object : PageHost by host {
+            override suspend fun evalJs(script: String): String? {
+                host.scripts.add(script)
+                if (script.contains("R.filled")) {
+                    return """{"filled":true}"""
+                }
+                if (script.contains("getBoundingClientRect")) {
+                    return "\"{\\\"x\\\":100,\\\"y\\\":200,\\\"w\\\":10,\\\"h\\\":10}\""
+                }
+                return host.evalJs(script)
+            }
+
+            override suspend fun tap(xCss: Double, yCss: Double): Boolean {
+                tappedAt = xCss to yCss
+                return true
+            }
+        }
+        val results = ResultStore()
+        val dir = java.io.File(
+            System.getProperty("java.io.tmpdir"),
+            "tb-learntap-${System.nanoTime()}"
+        )
+        dir.mkdirs()
+        try {
+            val learned = com.termux.browser.ai.LearnedStore(dir)
+            learned.put("chatgpt.com", "div.send")
+            val policy = ControlPolicy()
+            val controller = BrowserController(tappingHost, policy, ActivityLog(), announce = {})
+            val ui = object : UiRunner {
+                override suspend fun <T> run(block: suspend () -> T): T = block()
+            }
+            val arbiter = CommandArbiter(
+                this, ui, tappingHost, controller, policy, results,
+                registry = AdapterRegistry(listOf(ChatGPTAdapter(), GenericAdapter())),
+                learnedStore = learned
+            )
+            try {
+                val submitted = arbiter.submit(
+                    BrowserCommand.AiChat("chatgpt", "Hi.", 100, "termux")
+                )
+                val id = (submitted as SubmitResult.Accepted).commandId
+                // Confirm path: first snapshot has composerEmpty, so the
+                // waiter is skipped quickly by design of this unit scope.
+                val stored = awaitResult(results, id)
+                assertTrue(
+                    stored!!.body.contains("completed") ||
+                        stored.body.contains("SUBMIT_UNCONFIRMED")
+                )
+                assertEquals(Pair(105.0, 205.0), tappedAt)
+            } finally {
+                arbiter.close()
+            }
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    @Test
     fun `generation advance during wait cancels`() = runBlocking {
         val host = FakeHost()
         host.snapshots.addAll(

@@ -227,17 +227,17 @@ class CommandArbiter(
         }
         val boundedPrompt = cmd.prompt.take(cmd.maxChars.coerceIn(1, ProtocolLimits.MAX_READ_CHARS))
         val selectors = adapter.selectors()
-        val submitScript = JsPrompt.submitScript(
-            JsPrompt.quotedPrompt(boundedPrompt),
-            JsPrompt.quotedStringList(selectors.prompt),
-            JsPrompt.quotedStringList(selectors.submit)
-        )
         // Everything from here touches the prompt bridge: native cleanup in
         // finally covers submit failure, waiter outcomes, and cancellation.
         try {
-            val ackRaw = ui.run { host.evalJs(submitScript) }
-            val ack = parseJsObject(ackRaw)
-            val submitted = ack?.get("submitted")?.jsonPrimitive?.content == "true"
+            // A user-taught send control is delivered with a genuine platform
+            // tap: script-synthesized clicks/keys are ignored by exactly the
+            // controls worth teaching. Otherwise the standard JS path.
+            val submitted = if (learned.isNullOrBlank()) {
+                submitViaScript(boundedPrompt, selectors)
+            } else {
+                submitViaLearnedTap(boundedPrompt, selectors, learned)
+            }
             if (!submitted) return failed(ErrorCodes.ADAPTER_UNRECOGNIZED)
 
             // Send verification: the script claiming success is not enough.
@@ -352,6 +352,58 @@ class CommandArbiter(
         // No WebView is touched on this path by construction.
         return apiRunner?.chat(cmd.provider, cmd.prompt, cmd.maxChars)
             ?: failed(ErrorCodes.INVALID_REQUEST)
+    }
+
+    private suspend fun submitViaScript(
+        boundedPrompt: String,
+        selectors: com.termux.browser.ai.SelectorSet
+    ): Boolean {
+        val submitScript = JsPrompt.submitScript(
+            JsPrompt.quotedPrompt(boundedPrompt),
+            JsPrompt.quotedStringList(selectors.prompt),
+            JsPrompt.quotedStringList(selectors.submit)
+        )
+        val ack = parseJsObject(ui.run { host.evalJs(submitScript) })
+        return ack?.get("submitted")?.jsonPrimitive?.content == "true"
+    }
+
+    /**
+     * Learned submit: fill the composer with the shared script, then tap
+     * the taught control with genuine platform input. Returns true only
+     * when the tap actually dispatched.
+     */
+    private suspend fun submitViaLearnedTap(
+        boundedPrompt: String,
+        selectors: com.termux.browser.ai.SelectorSet,
+        learned: String
+    ): Boolean {
+        val fill = ui.run {
+            host.evalJs(
+                JsPrompt.fillScript(
+                    JsPrompt.quotedPrompt(boundedPrompt),
+                    JsPrompt.quotedStringList(selectors.prompt)
+                )
+            )
+        }
+        val filled = parseJsObject(fill)?.get("filled")?.jsonPrimitive?.content == "true"
+        if (!filled) return false
+        // The learned value is a selector, but quoting is quoting: any
+        // string becomes a safe JSON string literal the same way.
+        val rectRaw = ui.run {
+            host.evalJs(JsPrompt.rectScript(JsPrompt.quotedPrompt(learned)))
+        }
+        return tappedAtRect(rectRaw)
+    }
+
+    private suspend fun tappedAtRect(rectRaw: String?): Boolean {
+        val rect = parseJsObject(rectRaw) ?: return false
+        fun num(key: String) = rect[key]?.jsonPrimitive?.content?.toDoubleOrNull()
+        val x = num("x") ?: return false
+        val y = num("y") ?: return false
+        val w = num("w") ?: 0.0
+        val h = num("h") ?: 0.0
+        if (w <= 0 || h <= 0) return false
+        return ui.run { host.tap(x + w / 2, y + h / 2) }
     }
 
     private fun failed(code: String): String =

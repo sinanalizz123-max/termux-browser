@@ -26,6 +26,29 @@ object JsPrompt {
         "(function(){try{delete window.__tbPrompt;}catch(e){window.__tbPrompt=null;}return 'cleared';})()"
 
     /**
+     * Fill-only variant: sets the composer text exactly like submitScript
+     * but performs NO click and NO Enter. Used when a learned send control
+     * will deliver the message with a genuine platform tap instead —
+     * required for controls that ignore script-synthesized events.
+     */
+    fun fillScript(
+        promptJson: String,
+        promptCandidatesJson: String
+    ): String {
+        return "(function(){window.__tbPrompt=$promptJson;" +
+            "var P=$promptCandidatesJson;" +
+            "var R={filled:false,reason:'unknown'};" +
+            "try{" +
+            "var pe=null;for(var k=0;k<P.length;k++){" +
+            "try{var e=document.querySelector(P[k]);if(e){pe=e;R.promptIndex=k;break;}}catch(_){}}" +
+            "if(!pe){R.reason='no-prompt';return JSON.stringify(R);}" +
+            fillBody() +
+            "R.filled=true;" +
+            "}finally{try{delete window.__tbPrompt;}catch(_){window.__tbPrompt=null;}}" +
+            "return JSON.stringify(R);})()"
+    }
+
+    /**
      * Atomic assign + submit + cleanup script. promptJson must come from
      * [quotedPrompt]; promptIndex/submitIndex are integer indices into the
      * baked candidate arrays (or -1 to auto-pick the first match).
@@ -46,19 +69,7 @@ object JsPrompt {
             "var pe=null;for(var k=0;k<P.length;k++){if(${promptIndex}>=0&&k!=${promptIndex})continue;" +
             "try{var e=document.querySelector(P[k]);if(e){pe=e;R.promptIndex=k;break;}}catch(_){}}" +
             "if(!pe){R.reason='no-prompt';return JSON.stringify(R);}" +
-            "var text=window.__tbPrompt;" +
-            "function setNative(el,txt){" +
-            "try{var proto=el.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;" +
-            "var setter=Object.getOwnPropertyDescriptor(proto,'value').set;" +
-            "setter.call(el,txt);return true;}catch(_){try{el.value=txt;return true;}catch(_){return false;}}}" +
-            "if('value' in pe){pe.focus();if(!setNative(pe,text)){R.reason='prompt-readonly';return JSON.stringify(R);}" +
-            "pe.dispatchEvent(new Event('input',{bubbles:true}));" +
-            "pe.dispatchEvent(new Event('change',{bubbles:true}));}" +
-            "else if(pe.isContentEditable){pe.focus();pe.textContent=text;" +
-            "pe.dispatchEvent(new InputEvent('input',{bubbles:true}));" +
-            "try{var r=document.createRange();r.selectNodeContents(pe);r.collapse(false);" +
-            "var s2=getSelection();s2.removeAllRanges();s2.addRange(r);}catch(_){}}" +
-            "else{R.reason='prompt-readonly';return JSON.stringify(R);}" +
+            fillBody() +
             "var se=null;for(var j=0;j<S.length;j++){if(${submitIndex}>=0&&j!=${submitIndex})continue;" +
             "try{var b=document.querySelector(S[j]);if(b){se=b;R.submitIndex=j;break;}}catch(_){}}" +
             "if(se){se.click();R.submitted=true;R.method='button';}" +
@@ -71,4 +82,30 @@ object JsPrompt {
             "}finally{try{delete window.__tbPrompt;}catch(_){window.__tbPrompt=null;}}" +
             "return JSON.stringify(R);})()"
     }
+
+    /**
+     * Single-element rectangle probe. Returns JSON {x,y,w,h} in CSS pixels
+     * or null. The selector travels as JSON data, like everywhere else.
+     */
+    fun rectScript(selectorJson: String): String =
+        "(function(){try{var e=document.querySelector($selectorJson);" +
+            "if(!e)return JSON.stringify(null);var r=e.getBoundingClientRect();" +
+            "return JSON.stringify({x:r.x,y:r.y,w:r.width,h:r.height});}" +
+            "catch(_){return JSON.stringify(null);}})()"
+
+    /** Shared composer-fill fragment: set text, notify the framework. */
+    private fun fillBody(): String =
+        "var text=window.__tbPrompt;" +
+            "function setNative(el,txt){" +
+            "try{var proto=el.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;" +
+            "var setter=Object.getOwnPropertyDescriptor(proto,'value').set;" +
+            "setter.call(el,txt);return true;}catch(_){try{el.value=txt;return true;}catch(_){return false;}}}" +
+            "if('value' in pe){pe.focus();if(!setNative(pe,text)){R.reason='prompt-readonly';return JSON.stringify(R);}" +
+            "pe.dispatchEvent(new Event('input',{bubbles:true}));" +
+            "pe.dispatchEvent(new Event('change',{bubbles:true}));}" +
+            "else if(pe.isContentEditable){pe.focus();pe.textContent=text;" +
+            "pe.dispatchEvent(new InputEvent('input',{bubbles:true}));" +
+            "try{var r=document.createRange();r.selectNodeContents(pe);r.collapse(false);" +
+            "var s2=getSelection();s2.removeAllRanges();s2.addRange(r);}catch(_){}}" +
+            "else{R.reason='prompt-readonly';return JSON.stringify(R);}"
 }

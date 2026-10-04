@@ -65,6 +65,22 @@ class JsPromptTest {
     }
 
     @Test
+    fun `fill script never clicks or presses enter`() {
+        val script = JsPrompt.fillScript("\"hi\"", "[\"textarea\"]")
+        assertTrue(script.contains("R.filled=true"))
+        assertFalse(script.contains("se.click()"))
+        assertFalse(script.contains("KeyboardEvent"))
+        assertTrue(script.contains("delete window.__tbPrompt"))
+    }
+
+    @Test
+    fun `rect script embeds the selector as data`() {
+        val script = JsPrompt.rectScript("\"div.send\"")
+        assertTrue(script.contains("getBoundingClientRect"))
+        assertTrue(script.contains("\"div.send\""))
+    }
+
+    @Test
     fun `clear script deletes the bridge`() {
         assertTrue(JsPrompt.CLEAR_SCRIPT.contains("delete window.__tbPrompt"))
     }
