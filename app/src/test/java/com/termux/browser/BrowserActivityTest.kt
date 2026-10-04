@@ -177,14 +177,16 @@ class BrowserActivityTest {
     fun `learn tap completes without touching views off main`() {
         val activity = startActivity()
         activity.controller.open("https://example.com", "user")
-        activity.learnMode = true
+        activity.armLearn("send")
         val now = SystemClock.uptimeMillis()
         // Must not throw WrongThreadException from the recorder.
         activity.webView.dispatchTouchEvent(
             MotionEvent.obtain(now, now, MotionEvent.ACTION_UP, 100f, 100f, 0)
         )
         shadowOf(Looper.getMainLooper()).idle()
-        assertTrue(activity.learnMode)
+        // One-shot capture is consumed by the tap.
+        assertFalse(activity.learnMode)
+        assertNull(activity.learnTarget)
     }
 
     @Test
