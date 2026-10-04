@@ -344,6 +344,18 @@ class CommandArbiter(
                     }.getOrNull()
                 } ?: emptyList()
             )
+            "images" -> ReadResult(
+                scope = cmd.scope,
+                images = parsed?.get("images")?.jsonArray?.take(200)?.mapNotNull { element ->
+                    runCatching {
+                        val obj = element.jsonObject
+                        ImageResult(
+                            src = (obj["src"]?.jsonPrimitive?.content ?: "").take(2000),
+                            alt = (obj["alt"]?.jsonPrimitive?.content ?: "").take(200)
+                        )
+                    }.getOrNull()
+                } ?: emptyList()
+            )
             else -> {
                 val text = parsed?.get("text")?.jsonPrimitive?.content ?: ""
                 ReadResult(

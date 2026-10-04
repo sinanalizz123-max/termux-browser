@@ -130,6 +130,7 @@ data class ReadResult(
     val text: String? = null,
     val title: String? = null,
     val links: List<LinkResult> = emptyList(),
+    val images: List<ImageResult> = emptyList(),
     val truncated: Boolean = false
 )
 
@@ -138,6 +139,12 @@ data class LinkResult(
     val text: String,
     val href: String,
     val visible: Boolean = true
+)
+
+@Serializable
+data class ImageResult(
+    val src: String,
+    val alt: String = ""
 )
 
 object ProtocolLimits {
@@ -151,5 +158,5 @@ object ProtocolLimits {
     const val MAX_RESULT_BYTES = 256 * 1024
     const val RESULT_TTL_MS = 5 * 60 * 1000L
 
-    val READ_SCOPES = setOf("page", "title", "links", "visible_text", "selection", "main_content")
+    val READ_SCOPES = setOf("page", "title", "links", "visible_text", "selection", "main_content", "images")
 }

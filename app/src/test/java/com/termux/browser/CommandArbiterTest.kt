@@ -373,6 +373,27 @@ class CommandArbiterTest {
     }
 
     @Test
+    fun `images scope returns src and alt`() = runBlocking {
+        val host = FakeHost().apply {
+            evalResult = """{"images":[{"src":"https://example.com/a.png","alt":"icon"},{"src":"blob:xyz"}]}"""
+        }
+        val results = ResultStore()
+        val controller = BrowserController(host, ControlPolicy(), ActivityLog(), announce = {})
+        val arbiter = CommandArbiter(
+            this, ui(), host, controller, ControlPolicy(), results
+        )
+        try {
+            val submitted = arbiter.submit(BrowserCommand.Read("images", 50000))
+            val id = (submitted as SubmitResult.Accepted).commandId
+            val stored = awaitResult(results, id)
+            assertTrue(stored!!.body.contains("https://example.com/a.png"))
+            assertTrue(stored.body.contains("blob:xyz"))
+        } finally {
+            arbiter.close()
+        }
+    }
+
+    @Test
     fun `full queue answers queue-full`() = runBlocking {
         val host = FakeHost()
         val policy = ControlPolicy()

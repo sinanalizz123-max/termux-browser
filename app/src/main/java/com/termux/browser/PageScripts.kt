@@ -13,6 +13,8 @@ object PageScripts {
         "(function(){return JSON.stringify({links:Array.prototype.slice.call(document.links,0,500).map(function(a){return{text:(a.innerText||'').slice(0,200),href:a.href||'',visible:!!(a.offsetWidth||a.offsetHeight)}})})})()"
     const val SELECTION =
         "(function(){return JSON.stringify({text:(window.getSelection?window.getSelection().toString():'')})})()"
+    const val IMAGES =
+        "(function(){return JSON.stringify({images:Array.prototype.slice.call(document.images,0,200).map(function(m){return{src:m.currentSrc||m.src||'',alt:(m.alt||'').slice(0,200)}})})})()"
 
     /**
      * Deterministic readability-style heuristic: prefers article/main
@@ -27,6 +29,7 @@ object PageScripts {
         "links" -> LINKS
         "selection" -> SELECTION
         "main_content" -> MAIN_CONTENT
+        "images" -> IMAGES
         else -> TEXT
     }
 }
