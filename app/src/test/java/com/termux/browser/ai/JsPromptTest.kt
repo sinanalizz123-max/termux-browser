@@ -61,6 +61,16 @@ class JsPromptTest {
     }
 
     @Test
+    fun `submit script uses native setter for framework inputs`() {
+        val script = JsPrompt.submitScript("\"hi\"", "[\"textarea\"]", "[\"button\"]")
+        // React/Vue-controlled inputs ignore direct value assignment.
+        assertTrue(script.contains("getOwnPropertyDescriptor"))
+        assertTrue(script.contains(".set;") || script.contains(".set("))
+        assertTrue(script.contains("keypress"))
+        assertTrue(script.contains("keyup"))
+    }
+
+    @Test
     fun `submit script handles textarea and contenteditable composers`() {
         val script = JsPrompt.submitScript("\"hi\"", "[\"textarea\"]", "[\"button\"]")
         // Textarea/input branch: value assignment plus input/change events.

@@ -47,18 +47,25 @@ object JsPrompt {
             "try{var e=document.querySelector(P[k]);if(e){pe=e;R.promptIndex=k;break;}}catch(_){}}" +
             "if(!pe){R.reason='no-prompt';return JSON.stringify(R);}" +
             "var text=window.__tbPrompt;" +
-            "if('value' in pe){pe.focus();pe.value=text;" +
+            "function setNative(el,txt){" +
+            "try{var proto=el.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;" +
+            "var setter=Object.getOwnPropertyDescriptor(proto,'value').set;" +
+            "setter.call(el,txt);return true;}catch(_){try{el.value=txt;return true;}catch(_){return false;}}}" +
+            "if('value' in pe){pe.focus();if(!setNative(pe,text)){R.reason='prompt-readonly';return JSON.stringify(R);}" +
             "pe.dispatchEvent(new Event('input',{bubbles:true}));" +
             "pe.dispatchEvent(new Event('change',{bubbles:true}));}" +
             "else if(pe.isContentEditable){pe.focus();pe.textContent=text;" +
-            "pe.dispatchEvent(new InputEvent('input',{bubbles:true}));}" +
+            "pe.dispatchEvent(new InputEvent('input',{bubbles:true}));" +
+            "try{var r=document.createRange();r.selectNodeContents(pe);r.collapse(false);" +
+            "var s2=getSelection();s2.removeAllRanges();s2.addRange(r);}catch(_){}}" +
             "else{R.reason='prompt-readonly';return JSON.stringify(R);}" +
             "var se=null;for(var j=0;j<S.length;j++){if(${submitIndex}>=0&&j!=${submitIndex})continue;" +
             "try{var b=document.querySelector(S[j]);if(b){se=b;R.submitIndex=j;break;}}catch(_){}}" +
             "if(se){se.click();R.submitted=true;R.method='button';}" +
             "else{" +
-            "var ke=new KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true,cancelable:true});" +
-            "pe.dispatchEvent(ke);R.submitted=true;R.method='enter';}" +
+            "function key(t){return new KeyboardEvent(t,{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true,cancelable:true});}" +
+            "pe.dispatchEvent(key('keydown'));pe.dispatchEvent(key('keypress'));pe.dispatchEvent(key('keyup'));" +
+            "R.submitted=true;R.method='enter';}" +
             "}finally{try{delete window.__tbPrompt;}catch(_){window.__tbPrompt=null;}}" +
             "return JSON.stringify(R);})()"
     }
