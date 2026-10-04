@@ -217,11 +217,16 @@ class AiChatArbiterTest {
                 val submitted = arbiter.submit(
                     BrowserCommand.AiChat("chatgpt", "Hi.", 100, "termux")
                 )
-                val id = (submitted as SubmitResult.Accepted).commandId
-                awaitResult(results, id)
-                val submitScript = host.scripts.firstOrNull { it.contains("window.__tbPrompt=") }
-                assertTrue(submitScript != null)
-                assertTrue(submitScript!!.contains("div.learned-send"))
+                assertTrue(submitted is SubmitResult.Accepted)
+                // The learned selector must lead the ACTUAL submit script
+                // sent to the page — observe scripts, not command results.
+                withTimeout(10000) {
+                    while (host.scripts.none { it.contains("window.__tbPrompt=") }) {
+                        delay(50)
+                    }
+                }
+                val submitScript = host.scripts.first { it.contains("window.__tbPrompt=") }
+                assertTrue(submitScript.contains("div.learned-send"))
             } finally {
                 arbiter.close()
             }
