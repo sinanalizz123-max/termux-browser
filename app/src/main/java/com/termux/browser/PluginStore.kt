@@ -53,6 +53,7 @@ class PluginStore(private val root: File) {
     @Synchronized
     fun activate(bundleId: String, version: Int, stagedDir: File): String? {
         checkId(bundleId)
+        versionsDir().mkdirs()
         val target = File(versionsDir(), "$bundleId-v$version")
         if (target.exists()) return "version already installed"
         if (!stagedDir.renameTo(target)) return "activation failed"
