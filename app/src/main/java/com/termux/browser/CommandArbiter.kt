@@ -241,10 +241,10 @@ class CommandArbiter(
             if (!submitted) return failed(ErrorCodes.ADAPTER_UNRECOGNIZED)
 
             // Send verification: the script claiming success is not enough.
-            // Within a short window, either a new message must appear or the
-            // composer must empty (message consumed). Otherwise fail fast
-            // instead of waiting minutes for a response to nothing.
-            if (!confirmSend(adapter, baseCount)) {
+            // A new message, a drained composer, or a same-host navigation
+            // must confirm it. Otherwise fail fast instead of waiting
+            // minutes for a response to nothing.
+            if (!confirmSend(adapter, baseCount, pageUrl)) {
                 return failed(ErrorCodes.SUBMIT_UNCONFIRMED)
             }
 
@@ -410,18 +410,30 @@ class CommandArbiter(
         """{"state":"failed","error":"$code"}"""
 
     /**
-     * Confirms the prompt actually left: new message count above the probe
-     * baseline, or the composer drained. Bounded (~10s); never blocks the
-     * response waiter on an unconfirmed send.
+     * Confirms the prompt actually left, by the first signal that fires:
+     * a new message above the probe baseline, a drained composer, or a
+     * same-host navigation (sites navigate to the new chat on send).
+     * Bounded (~10s); never blocks the response waiter on an unconfirmed
+     * send. Message counters alone are unreliable: some sites' selectors
+     * match static decoration rather than messages.
      */
     private suspend fun confirmSend(
         adapter: com.termux.browser.ai.SiteAdapter,
-        baseCount: Int
+        baseCount: Int,
+        startUrl: String
     ): Boolean {
+        val startHost = registry.hostOf(startUrl)
+        val startPath = UrlPolicy.pathOf(startUrl)
         repeat(20) {
             val snap = SnapshotParser.parse(ui.run { host.evalJs(adapter.snapshotScript()) })
                 ?: Snapshot()
             if (snap.messageCount > baseCount || snap.composerEmpty) return true
+            val now = ui.run { host.currentUrl() }
+            if (now != null && registry.hostOf(now) == startHost &&
+                UrlPolicy.pathOf(now) != startPath
+            ) {
+                return true
+            }
             kotlinx.coroutines.delay(500)
         }
         return false

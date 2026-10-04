@@ -61,6 +61,14 @@ class UrlPolicyTest {
     }
 
     @Test
+    fun `pathOf extracts everything after the host`() {
+        assertEquals("/a/chat/s/123", UrlPolicy.pathOf("https://chat.deepseek.com/a/chat/s/123"))
+        assertEquals("/", UrlPolicy.pathOf("https://chat.deepseek.com/"))
+        assertEquals("", UrlPolicy.pathOf(null))
+        assertEquals("", UrlPolicy.pathOf("   "))
+    }
+
+    @Test
     fun `display form strips tokens and caps length`() {
         assertEquals(
             "https://accounts.google.com/v3/signin/identifier",

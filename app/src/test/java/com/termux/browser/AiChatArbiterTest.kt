@@ -5,6 +5,7 @@ import com.termux.browser.ai.ChatGPTAdapter
 import com.termux.browser.ai.GenericAdapter
 import com.termux.browser.ai.JsPrompt
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
@@ -334,6 +335,57 @@ class AiChatArbiterTest {
             }
         } finally {
             dir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `same-host navigation confirms the send`() = runBlocking {
+        fun snap(count: Int, text: String, generating: Boolean = false) =
+            """{"messageCount":$count,"lastText":"$text","generating":$generating,"promptFound":true,"submitFound":true}"""
+        val host = FakeHost()
+        // Flat composer for probe + confirm polls, a zero baseline, then
+        // progressive texts (any consumption alignment appears) and a long
+        // stable run for completion.
+        host.snapshots.addAll(
+            listOf(
+                snap(2, "old"), snap(2, "old"), snap(2, "old"), snap(2, "old"),
+                snap(2, "old"), snap(2, "old"), snap(2, "old"),
+                snap(0, ""),
+                snap(3, "a", true), snap(3, "ab", true),
+                snap(3, "abc", true), snap(3, "abcd", true)
+            ) + List(8) { snap(3, "abcde") }
+        )
+        var current = "https://chatgpt.com/"
+        val navHost = object : PageHost by host {
+            override fun currentUrl(): String = current
+        }
+        val results = ResultStore()
+        val policy = ControlPolicy()
+        val controller = BrowserController(navHost, policy, ActivityLog(), announce = {})
+        val ui = object : UiRunner {
+            override suspend fun <T> run(block: suspend () -> T): T = block()
+        }
+        val arbiter = CommandArbiter(
+            this, ui, navHost, controller, policy, results,
+            registry = AdapterRegistry(listOf(ChatGPTAdapter(), GenericAdapter()))
+        )
+        try {
+            val submitted = arbiter.submit(
+                BrowserCommand.AiChat("chatgpt", "Hi.", 100, "termux")
+            )
+            val id = (submitted as SubmitResult.Accepted).commandId
+            // The site navigates to the new chat shortly after submit,
+            // exactly like the real flow under test.
+            kotlinx.coroutines.launch {
+                kotlinx.coroutines.delay(1000)
+                current = "https://chatgpt.com/c/new-chat-id"
+            }
+            val stored = awaitResult(results, id)
+            // Navigation confirmed the send; the scripted answer completes.
+            // What must NOT happen is SUBMIT_UNCONFIRMED.
+            assertFalse(stored.body.contains("SUBMIT_UNCONFIRMED"))
+        } finally {
+            arbiter.close()
         }
     }
 

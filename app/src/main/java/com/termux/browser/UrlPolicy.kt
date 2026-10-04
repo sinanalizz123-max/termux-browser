@@ -23,6 +23,12 @@ object UrlPolicy {
      * Normalize address-bar input to a loadable https URL, a search URL, or
      * null when the input must be rejected.
      */
+    /** Path + query of a URL (everything after the host), for flow detection. */
+    fun pathOf(url: String?): String {
+        if (url.isNullOrBlank()) return ""
+        return "/" + url.substringAfter("://", url).substringAfter('/', "").substringBefore('#')
+    }
+
     /**
      * Same-page check tolerant of WebView trailing-slash normalization
      * (open "https://example.com" finishes as "https://example.com/").
