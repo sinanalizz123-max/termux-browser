@@ -37,8 +37,8 @@ class PluginArbiterTest {
     private fun plugin(): PluginAdapter {
         return PluginAdapter(
             manifestId = "plugintest",
-            hosts = setOf("chat.plugintest.com"),
-            selectors = com.termux.browser.ai.SelectorSet(
+            hostSet = setOf("chat.plugintest.com"),
+            selectorSet = com.termux.browser.ai.SelectorSet(
                 prompt = listOf("textarea"),
                 submit = listOf("div.send"),
                 messages = listOf("[class*='ds-markdown']"),
