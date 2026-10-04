@@ -300,7 +300,8 @@ class LocalApiServerTest {
             "POST" to "/control/resume",
             "POST" to "/control/stop",
             "GET" to "/debug/console",
-            "GET" to "/debug/report"
+            "GET" to "/debug/report",
+            "POST" to "/debug/probe"
         )
         for ((method, path) in routes) {
             val code = codeOf(method, path, if (method == "POST") "{}" else null)
@@ -321,6 +322,17 @@ class LocalApiServerTest {
                 reportBody.contains(key)
             )
         }
+    }
+
+    @Test
+    fun `debug probe is bounded and authenticated`() {
+        val (unauth, _) = post("/debug/probe", "00".repeat(32), """{"selectors":["a"]}""")
+        assertEquals(401, unauth)
+        val (tooMany, _) = post(
+            "/debug/probe", hex,
+            '{"selectors":[' + "\"a\",".repeat(21) + '"b"]}'
+        )
+        assertEquals(400, tooMany)
     }
 
     @Test

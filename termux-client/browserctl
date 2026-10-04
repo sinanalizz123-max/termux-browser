@@ -178,6 +178,15 @@ def cmd_debug(args):
     print(json.dumps(events[-ns.last:], indent=2))
 
 
+def cmd_probe(args):
+    import argparse
+    p = argparse.ArgumentParser(prog="browserctl probe")
+    p.add_argument("selectors", nargs="+")
+    ns = p.parse_args(args)
+    code, body = api("POST", "/debug/probe", {"selectors": ns.selectors})
+    print(json.dumps(body, indent=2))
+
+
 def cmd_control(name):
     def run(_args):
         code, body = api("POST", f"/control/{name}")
@@ -306,6 +315,7 @@ COMMANDS = {
     "ai": cmd_ai,
     "apichat": cmd_apichat,
     "debug": cmd_debug,
+    "probe": cmd_probe,
     "status": cmd_status,
     "open": cmd_open,
     "search": cmd_search,

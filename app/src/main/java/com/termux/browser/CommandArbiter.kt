@@ -100,6 +100,9 @@ class CommandArbiter(
 
     fun pendingCount(): Int = pending.get()
 
+    /** Debug-only: single static eval outside the command queue. */
+    suspend fun debugEval(script: String): String? = ui.run { host.evalJs(script) }
+
     /** Stop: queued work completes as CANCELLED, live page stops. */
     suspend fun stopNow(source: String) {
         var drained = channel.tryReceive()

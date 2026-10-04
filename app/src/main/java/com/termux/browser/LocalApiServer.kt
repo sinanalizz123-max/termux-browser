@@ -119,6 +119,7 @@ class LocalApiServer(
                     webSocket("/events") { handleEvents() }
                     get("/debug/console") { handleDebugConsole() }
                     get("/debug/report") { handleDebugReport() }
+                    post("/debug/probe") { handleDebugProbe() }
                 }
             }
             }
@@ -405,6 +406,30 @@ class LocalApiServer(
         }
         call.respondText(
             """{"envelope":${json.encodeToString(envelope())},"events":[$items]}""",
+            ContentType.Application.Json
+        )
+    }
+
+    /**
+     * Debug-only selector probe: counts matches per selector on the live
+     * page. Counts only, never text or HTML. Token-gated like everything
+     * else; used to fix adapter candidates against real site DOM.
+     */
+    private suspend fun RoutingContext.handleDebugProbe() {
+        if (!authorized() || rateLimited()) return
+        val text = readJsonBody() ?: return
+        val request = runCatching {
+            json.decodeFromString<ProbeRequest>(text)
+        }.getOrNull() ?: return error(ErrorCodes.INVALID_REQUEST, "Invalid probe request.")
+        if (request.selectors.size > 20 || request.selectors.any { it.length > 200 }) {
+            return error(ErrorCodes.INVALID_REQUEST, "Probe bounded to 20 short selectors.")
+        }
+        val script = "(function(){var S=${json.encodeToString(request.selectors)};" +
+            "return JSON.stringify(S.map(function(s){try{return document.querySelectorAll(s).length;}" +
+            "catch(e){return -1;}}))})()"
+        val raw = arbiter.debugEval(script)
+        call.respondText(
+            """{"envelope":${json.encodeToString(envelope())},"counts":${raw ?: "null"}}""",
             ContentType.Application.Json
         )
     }

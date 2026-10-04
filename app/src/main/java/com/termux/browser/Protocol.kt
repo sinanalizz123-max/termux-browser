@@ -81,6 +81,11 @@ data class ReadRequest(
 )
 
 @Serializable
+data class ProbeRequest(
+    val selectors: List<String> = emptyList()
+)
+
+@Serializable
 data class AiChatRequest(
     val site: String = "",
     val prompt: String = "",
