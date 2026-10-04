@@ -1,13 +1,14 @@
 package com.termux.browser
 
 /**
- * M6 foreground-service policy (pure, unit-tested).
+ * Foreground-service policy (pure, unit-tested).
  *
- * FGS = automation actively executing AND activity stopped/backgrounded.
- * Foreground automation never holds an FGS. Idle never holds an FGS.
+ * FGS = control plane up (server running or automation executing) AND
+ * activity stopped/backgrounded. This keeps Termux commands working while
+ * the app is backgrounded. Foreground never holds an FGS.
  * The FGS is started during the foreground-to-background transition
- * (onPause with active automation), never from a fully backgrounded state,
- * per the Android 12+ background-start restriction.
+ * (onPause with an active control plane), never from a fully backgrounded
+ * state, per the Android 12+ background-start restriction.
  */
 class ForegroundController {
 
@@ -19,26 +20,35 @@ class ForegroundController {
 
     var automationActive: Boolean = false
         private set
+    var serverActive: Boolean = false
+        private set
     var activityVisible: Boolean = true
         private set
+
+    private fun controlActive(): Boolean = automationActive || serverActive
 
     fun onAutomationChanged(active: Boolean): Action {
         automationActive = active
         return evaluate()
     }
 
+    fun onServerChanged(active: Boolean): Action {
+        serverActive = active
+        return evaluate()
+    }
+
     fun onVisibilityChanged(visible: Boolean): Action {
         val wasVisible = activityVisible
         activityVisible = visible
-        // Resume always stops the FGS (automation continues); a repeated
-        // visible signal with no transition changes nothing.
+        // Resume always stops the FGS (control plane keeps running); a
+        // repeated visible signal with no transition changes nothing.
         if (visible && !wasVisible) return Action.StopFgs
         return evaluate()
     }
 
     private fun evaluate(): Action = when {
-        automationActive && !activityVisible -> Action.StartFgs
-        !automationActive -> Action.StopFgs
+        controlActive() && !activityVisible -> Action.StartFgs
+        !controlActive() -> Action.StopFgs
         else -> Action.None
     }
 }

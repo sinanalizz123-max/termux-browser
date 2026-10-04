@@ -389,6 +389,10 @@ class BrowserActivity : Activity(), PageHost {
                 // Control returns on next activity creation once free.
                 server = null
                 announce("Termux control unavailable: localhost port busy.")
+            } else {
+                // Control plane is up: hold a foreground service whenever
+                // backgrounded so Termux keeps working with the app hidden.
+                applyFgs(fgs.onServerChanged(true))
             }
         }
         wireControlPlane()

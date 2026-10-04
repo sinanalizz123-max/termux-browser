@@ -14,6 +14,21 @@ class ForegroundControllerTest {
     }
 
     @Test
+    fun `running server holds fgs while backgrounded without automation`() {
+        val fgs = ForegroundController()
+        assertTrue(fgs.onServerChanged(true) is ForegroundController.Action.None)
+        assertTrue(fgs.onVisibilityChanged(false) is ForegroundController.Action.StartFgs)
+    }
+
+    @Test
+    fun `server stop ends the service`() {
+        val fgs = ForegroundController()
+        fgs.onServerChanged(true)
+        fgs.onVisibilityChanged(false)
+        assertTrue(fgs.onServerChanged(false) is ForegroundController.Action.StopFgs)
+    }
+
+    @Test
     fun `foreground automation holds no foreground service`() {
         val fgs = ForegroundController()
         assertTrue(fgs.onAutomationChanged(true) is ForegroundController.Action.None)
