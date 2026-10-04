@@ -73,8 +73,8 @@ class PluginStoreTest {
     fun `per-provider pointers are independent`() {
         val root = folder.newFolder()
         val store = PluginStore(root)
-        store.activate("deepseek", 1, staging(root))
-        store.activate("chatgpt", 5, staging(root))
+        store.activate("deepseek", 1, staging(root, "manifest.json"))
+        store.activate("chatgpt", 5, staging(root, "manifest.json"))
         assertEquals(1, store.activeFor("deepseek")!!.version)
         assertEquals(5, store.activeFor("chatgpt")!!.version)
         assertEquals(2, store.active().size)
