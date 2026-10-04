@@ -23,6 +23,10 @@ import io.ktor.websocket.CloseReason
 import io.ktor.websocket.Frame
 import io.ktor.websocket.close
 import io.ktor.websocket.readText
+import com.termux.browser.ai.PluginAdapter
+import com.termux.browser.ai.PluginBundle
+import com.termux.browser.ai.PluginCrypto
+import com.termux.browser.ai.ValidBundle
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.util.UUID
@@ -68,6 +72,9 @@ class LocalApiServer(
     private val debugLog: ActivityLog = ActivityLog(),
     private val reportProvider: suspend () -> DebugReport = { DebugReport() },
     private val crashRoot: java.io.File? = null,
+    private val pluginStore: PluginStore? = null,
+    private val pluginRootKey: java.security.PublicKey? = null,
+    private val onPluginsChanged: () -> Unit = {},
     private val json: Json = Json {
         ignoreUnknownKeys = true
         explicitNulls = false
@@ -117,6 +124,9 @@ class LocalApiServer(
                     post("/control/pause") { handlePause() }
                     post("/control/resume") { handleResume() }
                     post("/control/stop") { handleControlStop() }
+                    post("/plugins/install") { handlePluginInstall() }
+                    post("/plugins/rollback") { handlePluginRollback() }
+                    get("/plugins") { handlePluginList() }
                     webSocket("/events") { handleEvents() }
                     get("/debug/console") { handleDebugConsole() }
                     get("/debug/report") { handleDebugReport() }
@@ -551,6 +561,122 @@ class LocalApiServer(
         log.add("termux", "recording", if (request.enabled) "started" else "stopped")
         call.respondText(
             """{"envelope":${json.encodeToString(envelope())},"recording":${Recorder.enabled}}""",
+            ContentType.Application.Json
+        )
+    }
+
+    /**
+     * Plugin install: base64 ZIP with exactly the five bundle files at the
+     * zip root (anything else, including directories and traversal names,
+     * is rejected). Staged, validated, signature-verified, then activated.
+     */
+    private suspend fun RoutingContext.handlePluginInstall() {
+        if (!authorized() || rateLimited()) return
+        val store = pluginStore ?: return error(ErrorCodes.INVALID_REQUEST, "Plugins unavailable.")
+        val key = pluginRootKey ?: return error(ErrorCodes.INVALID_REQUEST, "No root key.")
+        val text = readJsonBody() ?: return
+        val request = runCatching {
+            json.decodeFromString<PluginInstallRequest>(text)
+        }.getOrNull() ?: return error(ErrorCodes.INVALID_REQUEST, "Invalid plugin request.")
+        val zipBytes = runCatching {
+            java.util.Base64.getDecoder().decode(request.contentBase64)
+        }.getOrNull()
+        if (zipBytes == null || zipBytes.size > 700 * 1024) {
+            return error(ErrorCodes.INVALID_REQUEST, "Bad bundle payload.")
+        }
+        val staging = store.newStaging()
+        try {
+            val files = unzipBundle(zipBytes) ?: return error(ErrorCodes.INVALID_REQUEST, "Bad zip.")
+            when (val check = PluginBundle.validate(files)) {
+                is com.termux.browser.ai.BundleCheck.Rejected ->
+                    return error(ErrorCodes.INVALID_REQUEST, "Rejected: ${check.reason}")
+                else -> Unit
+            }
+            val bundle = PluginBundle.assemble(files)
+            val manifestBytes = bundle.manifestBytes
+            if (!PluginCrypto.verify(manifestBytes, bundle.signature, key)) {
+                return error(ErrorCodes.INVALID_REQUEST, "Bad signature.")
+            }
+            store.canInstall(bundle.manifest.id, bundle.manifest.version)?.let {
+                return error(ErrorCodes.INVALID_REQUEST, it)
+            }
+            // Copy validated files into staging, then activate atomically.
+            for ((name, bytes) in files) {
+                java.io.File(staging, name).writeBytes(bytes)
+            }
+            store.activate(bundle.manifest.id, bundle.manifest.version, staging)?.let {
+                return error(ErrorCodes.INVALID_REQUEST, it)
+            }
+            log.add("termux", "plugin_install", "${bundle.manifest.id} v${bundle.manifest.version}")
+            onPluginsChanged()
+            call.respondText(
+                """{"envelope":${json.encodeToString(envelope())},"id":${json.encodeToString(bundle.manifest.id)},"version":${bundle.manifest.version}}""",
+                ContentType.Application.Json
+            )
+        } finally {
+            runCatching { staging.deleteRecursively() }
+        }
+    }
+
+    private fun unzipBundle(zipBytes: ByteArray): Map<String, ByteArray>? {
+        return runCatching {
+            val files = mutableMapOf<String, ByteArray>()
+            java.util.zip.ZipInputStream(zipBytes.inputStream()).use { zip ->
+                var entry = zip.nextEntry
+                while (entry != null) {
+                    val name = entry.name
+                    // Only exact root-level expected files: no directories,
+                    // no traversal, no extras, no symlinks-by-construction.
+                    if (name !in com.termux.browser.ai.PluginFormat.EXPECTED_FILES) return null
+                    if (entry.isDirectory) return null
+                    val out = java.io.ByteArrayOutputStream()
+                    val buffer = ByteArray(8192)
+                    var total = 0
+                    while (true) {
+                        val read = zip.read(buffer)
+                        if (read < 0) break
+                        total += read
+                        if (total > 70 * 1024) return null
+                        out.write(buffer, 0, read)
+                    }
+                    files[name] = out.toByteArray()
+                    zip.closeEntry()
+                    entry = zip.nextEntry
+                }
+            }
+            if (files.keys != com.termux.browser.ai.PluginFormat.EXPECTED_FILES) return null
+            files.toMap()
+        }.getOrNull()
+    }
+
+    private suspend fun RoutingContext.handlePluginRollback() {
+        if (!authorized()) return
+        val store = pluginStore ?: return error(ErrorCodes.INVALID_REQUEST, "Plugins unavailable.")
+        val text = readJsonBody() ?: return
+        val request = runCatching {
+            json.decodeFromString<PluginRollbackRequest>(text)
+        }.getOrNull() ?: return error(ErrorCodes.INVALID_REQUEST, "Invalid rollback request.")
+        if (!request.id.matches(Regex("[a-z0-9-]{1,32}"))) {
+            return error(ErrorCodes.INVALID_REQUEST, "Bad plugin id.")
+        }
+        store.rollback(request.id)?.let {
+            return error(ErrorCodes.INVALID_REQUEST, it)
+        }
+        log.add("termux", "plugin_rollback", request.id)
+        onPluginsChanged()
+        call.respondText(
+            """{"envelope":${json.encodeToString(envelope())},"id":${json.encodeToString(request.id)}}""",
+            ContentType.Application.Json
+        )
+    }
+
+    private suspend fun RoutingContext.handlePluginList() {
+        if (!authorized()) return
+        val items = (pluginStore?.active() ?: emptyList()).joinToString(",") {
+            """{"id":${json.encodeToString(it.id)},"version":${it.version}}"""
+        }
+        call.respondText(
+            """{"envelope":${json.encodeToString(envelope())},"plugins":[$items]}""",
             ContentType.Application.Json
         )
     }

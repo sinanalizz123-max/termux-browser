@@ -86,6 +86,17 @@ data class ProbeRequest(
 )
 
 @Serializable
+data class PluginInstallRequest(
+    val filename: String = "",
+    val contentBase64: String = ""
+)
+
+@Serializable
+data class PluginRollbackRequest(
+    val id: String = ""
+)
+
+@Serializable
 data class AiChatRequest(
     val site: String = "",
     val prompt: String = "",

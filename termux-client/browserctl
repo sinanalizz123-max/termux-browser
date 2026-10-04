@@ -220,6 +220,75 @@ def cmd_probe(args):
     print(json.dumps(body, indent=2))
 
 
+def plugin_key_path():
+    p = os.path.expanduser("~/.config/termux-browser/keys/plugin-sign.key")
+    if not os.path.exists(p):
+        print("no signing key. It lives in ~/.config/termux-browser/keys/.", file=sys.stderr)
+        sys.exit(2)
+    return p
+
+
+def cmd_plugin(args):
+    import argparse
+    import base64
+    import hashlib
+    import io as _io
+    import json as _json
+    import zipfile
+    p = argparse.ArgumentParser(prog="browserctl plugin")
+    p.add_argument("action", choices=["pack", "push", "list", "rollback"])
+    p.add_argument("target", nargs="?")
+    ns = p.parse_args(args)
+    if ns.action == "list":
+        code, body = api("GET", "/plugins")
+        print(json.dumps(body, indent=2))
+        return
+    if ns.action == "rollback":
+        if not ns.target:
+            print("usage: browserctl plugin rollback <id>", file=sys.stderr)
+            sys.exit(2)
+        code, body = api("POST", "/plugins/rollback", {"id": ns.target})
+        print(json.dumps(body, indent=2))
+        return
+    if ns.action == "pack":
+        # pack <dir> -> <dir>.zip: canonical manifest (sorted keys, compact)
+        # plus detached RSA/SHA-256 signature over the manifest bytes.
+        from cryptography.hazmat.primitives import hashes, serialization
+        from cryptography.hazmat.primitives.asymmetric import padding
+        if not ns.target or not os.path.isdir(ns.target):
+            print("usage: browserctl plugin pack <plugindir>", file=sys.stderr)
+            sys.exit(2)
+        with open(plugin_key_path(), "rb") as f:
+            private = serialization.load_pem_private_key(f.read(), password=None)
+        manifest_path = os.path.join(ns.target, "manifest.json")
+        with open(manifest_path) as f:
+            manifest = _json.load(f)
+        canonical = _json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode()
+        with open(manifest_path, "wb") as f:
+            f.write(canonical)
+        signature = private.sign(canonical, padding.PKCS1v15(), hashes.SHA256())
+        out = ns.target.rstrip("/") + ".zip"
+        names = ["manifest.json", "selectors.json", "health.json", "plan.json"]
+        with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zf:
+            for name in names:
+                with open(os.path.join(ns.target, name), "rb") as f:
+                    data = f.read()
+                print(f"{name}: {len(data)} bytes sha256={hashlib.sha256(data).hexdigest()[:16]}...")
+                zf.writestr(name, data)
+            zf.writestr("signature.sig", signature)
+        print(f"packed {out}")
+        return
+    # push <bundle.zip>
+    if not ns.target or not os.path.isfile(ns.target):
+        print("usage: browserctl plugin push <bundle.zip>", file=sys.stderr)
+        sys.exit(2)
+    with open(ns.target, "rb") as f:
+        payload = base64.b64encode(f.read()).decode()
+    code, body = api("POST", "/plugins/install",
+                     {"filename": os.path.basename(ns.target), "contentBase64": payload})
+    print(json.dumps(body, indent=2))
+
+
 def cmd_control(name):
     def run(_args):
         code, body = api("POST", f"/control/{name}")
@@ -349,6 +418,7 @@ COMMANDS = {
     "apichat": cmd_apichat,
     "debug": cmd_debug,
     "probe": cmd_probe,
+    "plugin": cmd_plugin,
     "status": cmd_status,
     "open": cmd_open,
     "search": cmd_search,

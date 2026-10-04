@@ -59,7 +59,14 @@ interface SiteAdapter {
  */
 class AdapterRegistry(adapters: List<SiteAdapter>) {
 
-    private val ordered = adapters.toList()
+    @Volatile
+    private var ordered = adapters.toList()
+
+    /** Swaps the adapter set (plugin install/rollback) without restart. */
+    @Synchronized
+    fun updateAdapters(adapters: List<SiteAdapter>) {
+        ordered = adapters.toList()
+    }
 
     fun detect(url: String): SiteAdapter? {
         val host = hostOf(url)

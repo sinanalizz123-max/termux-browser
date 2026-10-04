@@ -84,6 +84,7 @@ class BrowserActivity : Activity(), PageHost {
     }
     private val results = ResultStore()
     private lateinit var arbiter: CommandArbiter
+    private lateinit var pluginStore: PluginStore
     private var server: LocalApiServer? = null
     private var apiToken: ByteArray = ByteArray(0)
     private var pageLoading = false
@@ -327,11 +328,11 @@ class BrowserActivity : Activity(), PageHost {
             apiCredentials,
             mapOf("openai" to OpenAiProvider(productionApiClient()))
         )
+        pluginStore = PluginStore(java.io.File(filesDir, "plugins"))
+        val pluginRegistry = AdapterRegistry(baseAdapters() + pluginAdapters(pluginStore))
         arbiter = CommandArbiter(
             activityScope, uiRunner, this, controller, policy, results, bus,
-            registry = AdapterRegistry(
-                listOf(ChatGPTAdapter(), DeepSeekAdapter(), GenericAdapter())
-            ),
+            registry = pluginRegistry,
             learnedStore = learnedStore,
             onWorkChanged = { active -> onAutomationWorkChanged(active) }
         )
@@ -363,13 +364,20 @@ class BrowserActivity : Activity(), PageHost {
             }
             previousCrashHandler?.uncaughtException(thread, error)
         }
+        val pluginKey = loadPluginRootKey()
         val api = LocalApiServer(
             apiToken, uiRunner, arbiter, policy, log, results,
             statusProvider = { currentStatus() },
             bus = bus,
             debugLog = debugLog,
             reportProvider = { currentReport() },
-            crashRoot = filesDir
+            crashRoot = filesDir,
+            pluginStore = pluginStore,
+            pluginRootKey = pluginKey,
+            onPluginsChanged = {
+                pluginRegistry.updateAdapters(baseAdapters() + pluginAdapters(pluginStore))
+                announce("Plugin set updated.")
+            }
         )
         server = api
         activityScope.launch {
@@ -485,6 +493,44 @@ class BrowserActivity : Activity(), PageHost {
         (webView.parent as? android.view.ViewGroup)?.removeView(webView)
         webView.destroy()
         super.onDestroy()
+    }
+
+    private fun baseAdapters(): List<com.termux.browser.ai.SiteAdapter> = listOf(
+        ChatGPTAdapter(), DeepSeekAdapter(), GenericAdapter()
+    )
+
+    private fun pluginAdapters(store: PluginStore): List<com.termux.browser.ai.SiteAdapter> {
+        return store.active().mapNotNull { pointer ->
+            runCatching {
+                val dir = store.versionDir(pointer)
+                val files = mapOf(
+                    "manifest.json" to java.io.File(dir, "manifest.json").readBytes(),
+                    "selectors.json" to java.io.File(dir, "selectors.json").readBytes(),
+                    "health.json" to java.io.File(dir, "health.json").readBytes(),
+                    "plan.json" to java.io.File(dir, "plan.json").readBytes(),
+                    "signature.sig" to java.io.File(dir, "signature.sig").readBytes()
+                )
+                if (com.termux.browser.ai.PluginBundle.validate(files)
+                    is com.termux.browser.ai.BundleCheck.Ok
+                ) {
+                    com.termux.browser.ai.PluginAdapter.fromBundle(
+                        com.termux.browser.ai.PluginBundle.assemble(files)
+                    )
+                } else {
+                    null
+                }
+            }.getOrNull()
+        }
+    }
+
+    private fun loadPluginRootKey(): java.security.PublicKey? {
+        return runCatching {
+            val b64 = resources.openRawResource(
+                resources.getIdentifier("plugin_root_pub", "raw", packageName)
+            ).bufferedReader().readText().trim().replace("\\s".toRegex(), "")
+            val der = android.util.Base64.decode(b64, android.util.Base64.DEFAULT)
+            com.termux.browser.ai.PluginCrypto.publicKeyFromDer(der)
+        }.getOrNull()
     }
 
     private fun productionApiClient(): HttpClient {
