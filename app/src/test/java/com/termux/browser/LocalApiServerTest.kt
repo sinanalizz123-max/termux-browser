@@ -328,9 +328,10 @@ class LocalApiServerTest {
     fun `debug probe is bounded and authenticated`() {
         val (unauth, _) = post("/debug/probe", "00".repeat(32), """{"selectors":["a"]}""")
         assertEquals(401, unauth)
+        val many = (1..21).joinToString(",") { "\"a\"" }
         val (tooMany, _) = post(
             "/debug/probe", hex,
-            '{"selectors":[' + "\"a\",".repeat(21) + '"b"]}'
+            "{\"selectors\":[$many,\"b\"]}"
         )
         assertEquals(400, tooMany)
     }
