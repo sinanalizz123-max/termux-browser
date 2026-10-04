@@ -38,6 +38,15 @@ class JsPromptTest {
     }
 
     @Test
+    fun `enter key carries legacy codes via defineProperty`() {
+        val script = JsPrompt.submitScript("\"hi\"", "[\"textarea\"]", "[]")
+        // KeyboardEvent initializers silently drop keyCode/which; editors
+        // that check them need defineProperty, or the press is ignored.
+        assertTrue(script.contains("Object.defineProperty(e,'keyCode'"))
+        assertTrue(script.contains("Object.defineProperty(e,'which'"))
+    }
+
+    @Test
     fun `enter fallback reports its method`() {
         val script = JsPrompt.submitScript("\"hi\"", "[\"textarea\"]", "[]")
         // No submit candidates: falls back to the composer's native Enter.

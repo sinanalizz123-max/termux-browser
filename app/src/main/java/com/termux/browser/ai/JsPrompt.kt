@@ -63,7 +63,9 @@ object JsPrompt {
             "try{var b=document.querySelector(S[j]);if(b){se=b;R.submitIndex=j;break;}}catch(_){}}" +
             "if(se){se.click();R.submitted=true;R.method='button';}" +
             "else{" +
-            "function key(t){return new KeyboardEvent(t,{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true,cancelable:true});}" +
+            "function key(t){var e=new KeyboardEvent(t,{key:'Enter',code:'Enter',bubbles:true,cancelable:true});" +
+            "try{Object.defineProperty(e,'keyCode',{value:13});Object.defineProperty(e,'which',{value:13});}catch(_){}" +
+            "return e;}" +
             "pe.dispatchEvent(key('keydown'));pe.dispatchEvent(key('keypress'));pe.dispatchEvent(key('keyup'));" +
             "R.submitted=true;R.method='enter';}" +
             "}finally{try{delete window.__tbPrompt;}catch(_){window.__tbPrompt=null;}}" +
