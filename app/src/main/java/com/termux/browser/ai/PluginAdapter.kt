@@ -27,7 +27,7 @@ class PluginAdapter(
 
     override fun snapshotScript(): String {
         return buildSnapshotScript(
-            selectors.prompt, selectors.messages, selectors.stop, selectors.submit,
+            selectorSet.prompt, selectorSet.messages, selectorSet.stop, selectorSet.submit,
             marker
         )
     }
@@ -57,8 +57,8 @@ class PluginAdapter(
         fun fromBundle(bundle: ValidBundle): PluginAdapter {
             return PluginAdapter(
                 manifestId = bundle.manifest.id,
-                hosts = bundle.manifest.hosts.toSet(),
-                selectors = SelectorSet(
+                hostSet = bundle.manifest.hosts.toSet(),
+                selectorSet = SelectorSet(
                     prompt = bundle.selectors.prompt,
                     submit = bundle.selectors.submit,
                     messages = bundle.selectors.messages,
