@@ -7,21 +7,21 @@ package com.termux.browser.ai
  * here in fixed code; the bundle contributes data only.
  */
 class PluginAdapter(
-    private val manifestId: String,
-    private val hosts: Set<String>,
-    private val selectors: SelectorSet,
+    manifestId: String,
+    hostSet: Set<String>,
+    private val selectorSet: SelectorSet,
     private val marker: String?,
     private val version: Int
 ) : SiteAdapter {
     override val id = manifestId
-    override val hosts: Set<String> = hosts
+    override val hosts: Set<String> = hostSet
 
     override fun detect(url: String): Boolean {
         val host = url.substringAfter("://", url).substringBefore('/').lowercase()
         return host in hosts || hosts.any { host.endsWith(".$it") }
     }
 
-    override fun selectors(): SelectorSet = selectors
+    override fun selectors(): SelectorSet = selectorSet
 
     override fun markerSelector(): String? = marker
 
