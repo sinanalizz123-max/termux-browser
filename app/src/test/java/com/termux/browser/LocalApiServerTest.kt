@@ -301,7 +301,8 @@ class LocalApiServerTest {
             "POST" to "/control/stop",
             "GET" to "/debug/console",
             "GET" to "/debug/report",
-            "POST" to "/debug/probe"
+            "GET" to "/debug/events",
+            "GET" to "/debug/commands"
         )
         for ((method, path) in routes) {
             val code = codeOf(method, path, if (method == "POST") "{}" else null)
@@ -334,6 +335,17 @@ class LocalApiServerTest {
             "{\"selectors\":[$many,\"b\"]}"
         )
         assertEquals(400, tooMany)
+    }
+
+    @Test
+    fun `debug events mirror the bus and commands list results`() {
+        val (eventsCode, eventsBody) = get("/debug/events?since=0", hex)
+        assertEquals(200, eventsCode)
+        assertTrue(eventsBody.contains("\"events\""))
+        assertTrue(eventsBody.contains("\"gap\""))
+        val (commandsCode, commandsBody) = get("/debug/commands", hex)
+        assertEquals(200, commandsCode)
+        assertTrue(commandsBody.contains("\"results\""))
     }
 
     @Test

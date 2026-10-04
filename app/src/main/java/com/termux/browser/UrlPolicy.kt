@@ -24,6 +24,16 @@ object UrlPolicy {
      * null when the input must be rejected.
      */
     /**
+     * Same-page check tolerant of WebView trailing-slash normalization
+     * (open "https://example.com" finishes as "https://example.com/").
+     * Null-safe: a null side only matches null.
+     */
+    fun samePage(a: String?, b: String?): Boolean {
+        if (a == null || b == null) return a == null && b == null
+        return a.trimEnd('/') == b.trimEnd('/')
+    }
+
+    /**
      * Display form for banners, logs, notifications, and API status: scheme
      * + host + path only, capped in length. OAuth and session tokens live
      * in query parameters and must never reach user-visible surfaces.

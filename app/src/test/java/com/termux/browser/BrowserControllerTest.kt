@@ -33,6 +33,18 @@ class BrowserControllerTest {
     }
 
     @Test
+    fun `trailing slash finish is claimed not user navigation`() {
+        val host = FakeHost()
+        val announced = mutableListOf<String>()
+        val (controller, _, log) = controller(host, announced)
+        controller.open("https://a.example", "termux")
+        assertTrue(controller.claimPending("https://a.example/"))
+        controller.onPageFinished("https://a.example/")
+        assertTrue(announced.any { it == "Page ready: https://a.example/" })
+        assertTrue(log.since(0).none { it.action == "stale_callback_ignored" })
+    }
+
+    @Test
     fun `stale page finish after user navigation is ignored`() {
         val host = FakeHost()
         val announced = mutableListOf<String>()

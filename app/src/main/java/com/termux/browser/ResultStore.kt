@@ -30,6 +30,13 @@ class ResultStore(
         }
     }
 
+    /** Newest-last snapshot for the debug command listing. */
+    @Synchronized
+    fun entries(): List<StoredResult> {
+        evictExpired()
+        return results.values.toList()
+    }
+
     @Synchronized
     fun get(commandId: String): StoredResult? {
         val stored = results[commandId] ?: return null

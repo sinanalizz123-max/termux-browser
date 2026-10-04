@@ -120,6 +120,8 @@ class LocalApiServer(
                     get("/debug/console") { handleDebugConsole() }
                     get("/debug/report") { handleDebugReport() }
                     post("/debug/probe") { handleDebugProbe() }
+                    get("/debug/events") { handleDebugEvents() }
+                    get("/debug/commands") { handleDebugCommands() }
                 }
             }
             }
@@ -430,6 +432,34 @@ class LocalApiServer(
         val raw = arbiter.debugEval(script)
         call.respondText(
             """{"envelope":${json.encodeToString(envelope())},"counts":${raw ?: "null"}}""",
+            ContentType.Application.Json
+        )
+    }
+
+    /**
+     * HTTP mirror of the WebSocket replay: typed bus events newer than
+     * since, plus an explicit gap flag. Same data, no socket needed.
+     */
+    private suspend fun RoutingContext.handleDebugEvents() {
+        if (!authorized()) return
+        val since = call.request.queryParameters["since"]?.toLongOrNull() ?: 0L
+        val replay = bus.replaySince(since)
+        val items = replay.events.joinToString(",") { json.encodeToString(it) }
+        call.respondText(
+            """{"envelope":${json.encodeToString(envelope())},"gap":${replay.gap},"events":[$items]}""",
+            ContentType.Application.Json
+        )
+    }
+
+    /** Every retained command result ID with its age: finds lost commands. */
+    private suspend fun RoutingContext.handleDebugCommands() {
+        if (!authorized()) return
+        val now = System.currentTimeMillis()
+        val items = results.entries().joinToString(",") {
+            """{"commandId":${json.encodeToString(it.commandId)},"ageMs":${now - it.createdAt}}"""
+        }
+        call.respondText(
+            """{"envelope":${json.encodeToString(envelope())},"results":[$items]}""",
             ContentType.Application.Json
         )
     }

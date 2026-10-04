@@ -52,6 +52,15 @@ class UrlPolicyTest {
     }
 
     @Test
+    fun `same page ignores a single trailing slash`() {
+        assertTrue(UrlPolicy.samePage("https://example.com", "https://example.com/"))
+        assertTrue(UrlPolicy.samePage("https://example.com/", "https://example.com/"))
+        assertFalse(UrlPolicy.samePage("https://example.com/a", "https://example.com/b"))
+        assertFalse(UrlPolicy.samePage(null, "https://example.com/"))
+        assertTrue(UrlPolicy.samePage(null, null))
+    }
+
+    @Test
     fun `display form strips tokens and caps length`() {
         assertEquals(
             "https://accounts.google.com/v3/signin/identifier",

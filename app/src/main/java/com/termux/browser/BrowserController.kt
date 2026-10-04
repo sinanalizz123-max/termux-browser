@@ -52,7 +52,7 @@ class BrowserController(
      * it is a user/manual navigation that must invalidate automation.
      */
     fun claimPending(url: String): Boolean {
-        if (pendingUrl == url) {
+        if (pendingUrl != null && UrlPolicy.samePage(pendingUrl, url)) {
             pendingUrl = null
             return true
         }
@@ -103,8 +103,9 @@ class BrowserController(
 
     fun onPageFinished(url: String) {
         // Stale when the session generation moved on (takeover/stop) or the
-        // finished URL is not the currently expected page.
-        if (activeGeneration != policy.generation || url != lastOpenedUrl) {
+        // finished URL is not the currently expected page. Comparison is
+        // slash-tolerant: WebViews normalize "https://a.b" to "https://a.b/".
+        if (activeGeneration != policy.generation || !UrlPolicy.samePage(url, lastOpenedUrl)) {
             log.add("system", "stale_callback_ignored", "gen=${policy.generation} ${UrlPolicy.forDisplay(url)}")
             return
         }

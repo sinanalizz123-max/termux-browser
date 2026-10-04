@@ -165,12 +165,20 @@ def cmd_apichat(args):
 def cmd_debug(args):
     import argparse
     p = argparse.ArgumentParser(prog="browserctl debug")
-    p.add_argument("what", choices=["console", "report"])
+    p.add_argument("what", choices=["console", "report", "events", "commands"])
     p.add_argument("--last", type=int, default=20)
     p.add_argument("--since", type=int, default=0)
     ns = p.parse_args(args)
     if ns.what == "report":
         code, body = api("GET", "/debug/report")
+        print(json.dumps(body, indent=2))
+        return
+    if ns.what == "events":
+        code, body = api("GET", f"/debug/events?since={ns.since}")
+        print(json.dumps(body, indent=2))
+        return
+    if ns.what == "commands":
+        code, body = api("GET", "/debug/commands")
         print(json.dumps(body, indent=2))
         return
     code, body = api("GET", f"/debug/console?since={ns.since}")
