@@ -191,9 +191,25 @@ class AiChatArbiterTest {
     }
 
     @Test
-    fun `learned submit selector leads the submit script`() = runBlocking {
+    fun `learned send bypasses js submit for fill plus tap`() = runBlocking {
         val host = FakeHost()
         host.snapshots.add(healthy())
+        var tappedAt: Pair<Double, Double>? = null
+        val tappingHost = object : PageHost by host {
+            override suspend fun evalJs(script: String): String? {
+                host.scripts.add(script)
+                if (script.contains("R.filled")) return """{"filled":true}"""
+                if (script.contains("getBoundingClientRect")) {
+                    return "\"{\\\"x\\\":50,\\\"y\\\":60,\\\"w\\\":20,\\\"h\\\":20}\""
+                }
+                return host.evalJs(script)
+            }
+
+            override suspend fun tap(xCss: Double, yCss: Double): Boolean {
+                tappedAt = xCss to yCss
+                return true
+            }
+        }
         val results = ResultStore()
         val dir = java.io.File(
             System.getProperty("java.io.tmpdir"),
@@ -204,12 +220,12 @@ class AiChatArbiterTest {
             val learned = com.termux.browser.ai.LearnedStore(dir)
             learned.put("chatgpt.com", "div.learned-send")
             val policy = ControlPolicy()
-            val controller = BrowserController(host, policy, ActivityLog(), announce = {})
+            val controller = BrowserController(tappingHost, policy, ActivityLog(), announce = {})
             val ui = object : UiRunner {
                 override suspend fun <T> run(block: suspend () -> T): T = block()
             }
             val arbiter = CommandArbiter(
-                this, ui, host, controller, policy, results,
+                this, ui, tappingHost, controller, policy, results,
                 registry = AdapterRegistry(listOf(ChatGPTAdapter(), GenericAdapter())),
                 learnedStore = learned
             )
@@ -218,15 +234,16 @@ class AiChatArbiterTest {
                     BrowserCommand.AiChat("chatgpt", "Hi.", 100, "termux")
                 )
                 assertTrue(submitted is SubmitResult.Accepted)
-                // The learned selector must lead the ACTUAL submit script
-                // sent to the page — observe scripts, not command results.
                 withTimeout(10000) {
-                    while (host.scripts.none { it.contains("window.__tbPrompt=") }) {
+                    while (tappedAt == null) {
                         delay(50)
                     }
                 }
-                val submitScript = host.scripts.first { it.contains("window.__tbPrompt=") }
-                assertTrue(submitScript.contains("div.learned-send"))
+                // Tapped at the learned control's center, not a JS click.
+                assertEquals(Pair(60.0, 70.0), tappedAt)
+                assertTrue(
+                    host.scripts.none { it.contains("se.click()") }
+                )
             } finally {
                 arbiter.close()
             }
