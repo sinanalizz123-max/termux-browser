@@ -10,6 +10,9 @@ app/build/
 
 # Local machine config (SDK path, secrets) — never commit
 local.properties
+# Signing keys — never commit; CI injects them from secrets
+*.jks
+*.keystore
 
 # Android Studio
 .idea/

@@ -15,8 +15,26 @@ android {
         versionName = "0.1.0-m1"
     }
 
+    // Persistent debug key: CI injects the shared keystore from secrets so
+    // every build carries the same signature and installs over the last
+    // one (logins/data preserved). Local builds without the env var keep
+    // AGP's default debug signing.
+    signingConfigs {
+        create("persistentDebug") {
+            storeFile = file(
+                System.getenv("DEBUG_KEYSTORE_PATH") ?: "missing-debug.keystore"
+            )
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     buildTypes {
         debug {
+            if (System.getenv("DEBUG_KEYSTORE_PATH") != null) {
+                signingConfig = signingConfigs.getByName("persistentDebug")
+            }
         }
         release {
             isMinifyEnabled = false

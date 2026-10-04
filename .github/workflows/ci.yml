@@ -37,7 +37,16 @@ jobs:
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;36.0.0"
 
+      # Same signature on every build: decodes the shared debug keystore
+      # from secrets so the APK installs over the previous install.
+      - name: Decode persistent debug keystore
+        env:
+          DEBUG_KEYSTORE_B64: ${{ secrets.DEBUG_KEYSTORE_B64 }}
+        run: echo "$DEBUG_KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/debug.keystore"
+
       - name: Assemble debug
+        env:
+          DEBUG_KEYSTORE_PATH: ${{ runner.temp }}/debug.keystore
         run: chmod +x gradlew && ./gradlew :app:assembleDebug --console=plain --max-workers 4
 
       - name: Upload debug APK
