@@ -153,6 +153,17 @@ class ResponseWaiterTest {
     }
 
     @Test
+    fun `parser reads composer state`() {
+        val busy = SnapshotParser.parse(
+            """{"composerKind":"textarea","composerEmpty":false}"""
+        )!!
+        assertEquals("textarea", busy.composerKind)
+        assertEquals(false, busy.composerEmpty)
+        val drained = SnapshotParser.parse("""{"composerEmpty":true}""")!!
+        assertEquals(true, drained.composerEmpty)
+    }
+
+    @Test
     fun `parser handles valid missing and malformed input`() {
         val full = SnapshotParser.parse(
             """{"messageCount":2,"lastText":"hi","generating":true}"""

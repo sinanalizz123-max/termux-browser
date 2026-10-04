@@ -47,10 +47,10 @@ class AiChatArbiterTest {
     }
 
     private fun healthy(count: Int = 2, text: String = "old") =
-        """{"messageCount":$count,"lastText":"$text","generating":false,"promptFound":true,"submitFound":true}"""
+        """{"messageCount":$count,"lastText":"$text","generating":false,"promptFound":true,"submitFound":true,"composerEmpty":true}"""
 
     private fun streaming(text: String, generating: Boolean = true) =
-        """{"messageCount":3,"lastText":"$text","generating":$generating,"promptFound":true,"submitFound":true}"""
+        """{"messageCount":3,"lastText":"$text","generating":$generating,"promptFound":true,"submitFound":true,"composerEmpty":true}"""
 
     private fun arbiter(
         host: FakeHost,
@@ -232,6 +232,29 @@ class AiChatArbiterTest {
             }
         } finally {
             dir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `unconfirmed send fails fast without waiting`() = runBlocking {
+        val host = FakeHost()
+        // Health passes, ack claims submitted, but no new message ever
+        // appears and the composer never drains: the send did not happen.
+        // NOTE: no composerEmpty here — the composer keeps its text.
+        host.snapshots.add(
+            """{"messageCount":2,"lastText":"old","generating":false,"promptFound":true,"submitFound":true,"composerEmpty":false}"""
+        )
+        val results = ResultStore()
+        val arbiter = arbiter(host, this, results)
+        try {
+            val submitted = arbiter.submit(
+                BrowserCommand.AiChat("chatgpt", "Hi.", 100, "termux")
+            )
+            val id = (submitted as SubmitResult.Accepted).commandId
+            val stored = awaitResult(results, id)
+            assertTrue(stored.body.contains("SUBMIT_UNCONFIRMED"))
+        } finally {
+            arbiter.close()
         }
     }
 

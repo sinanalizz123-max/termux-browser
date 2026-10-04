@@ -48,6 +48,7 @@ object ErrorCodes {
     const val AI_ERROR = "AI_ERROR"
     const val ADAPTER_UNRECOGNIZED = "ADAPTER_UNRECOGNIZED"
     const val PROVIDER_DISABLED = "PROVIDER_DISABLED"
+    const val SUBMIT_UNCONFIRMED = "SUBMIT_UNCONFIRMED"
 }
 
 @Serializable

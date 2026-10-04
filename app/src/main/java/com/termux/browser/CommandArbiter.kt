@@ -212,7 +212,9 @@ class CommandArbiter(
         }
         // Health gate on a fresh snapshot: confirmed controls or nothing.
         val probe = ui.run { host.evalJs(adapter.snapshotScript()) }
-        val health = adapter.health(SnapshotParser.parse(probe) ?: Snapshot(), pageUrl)
+        val probeSnap = SnapshotParser.parse(probe) ?: Snapshot()
+        val baseCount = probeSnap.messageCount
+        val health = adapter.health(probeSnap, pageUrl)
         if (health.loginState == "logged_out") return failed(ErrorCodes.LOGIN_REQUIRED)
         if (!health.promptInput || !health.submitControl) {
             return failed(ErrorCodes.ADAPTER_UNRECOGNIZED)
@@ -231,6 +233,14 @@ class CommandArbiter(
             val ack = parseJsObject(ackRaw)
             val submitted = ack?.get("submitted")?.jsonPrimitive?.content == "true"
             if (!submitted) return failed(ErrorCodes.ADAPTER_UNRECOGNIZED)
+
+            // Send verification: the script claiming success is not enough.
+            // Within a short window, either a new message must appear or the
+            // composer must empty (message consumed). Otherwise fail fast
+            // instead of waiting minutes for a response to nothing.
+            if (!confirmSend(adapter, baseCount)) {
+                return failed(ErrorCodes.SUBMIT_UNCONFIRMED)
+            }
 
             val startGen = policy.generation
             val startUrl = pageUrl
@@ -281,6 +291,24 @@ class CommandArbiter(
 
     private fun failed(code: String): String =
         """{"state":"failed","error":"$code"}"""
+
+    /**
+     * Confirms the prompt actually left: new message count above the probe
+     * baseline, or the composer drained. Bounded (~10s); never blocks the
+     * response waiter on an unconfirmed send.
+     */
+    private suspend fun confirmSend(
+        adapter: com.termux.browser.ai.SiteAdapter,
+        baseCount: Int
+    ): Boolean {
+        repeat(20) {
+            val snap = SnapshotParser.parse(ui.run { host.evalJs(adapter.snapshotScript()) })
+                ?: Snapshot()
+            if (snap.messageCount > baseCount || snap.composerEmpty) return true
+            kotlinx.coroutines.delay(500)
+        }
+        return false
+    }
 
     /**
      * evaluateJavascript delivers string results JSON-quoted (outer quotes

@@ -45,10 +45,10 @@ class DeepSeekArbiterTest {
     }
 
     private fun healthy(text: String = "old") =
-        """{"messageCount":2,"lastText":"$text","generating":false,"promptFound":true,"submitFound":true,"markerFound":true}"""
+        """{"messageCount":2,"lastText":"$text","generating":false,"promptFound":true,"submitFound":true,"markerFound":true,"composerEmpty":true}"""
 
     private fun streaming(text: String, generating: Boolean = true) =
-        """{"messageCount":3,"lastText":"$text","generating":$generating,"promptFound":true,"submitFound":true,"markerFound":true}"""
+        """{"messageCount":3,"lastText":"$text","generating":$generating,"promptFound":true,"submitFound":true,"markerFound":true,"composerEmpty":true}"""
 
     private fun arbiter(
         host: FakeHost,
