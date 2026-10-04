@@ -6,6 +6,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
+import androidx.core.view.GravityCompat
 import org.junit.Assert.assertNull
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
