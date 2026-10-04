@@ -28,7 +28,8 @@ data class Snapshot(
     val error: Boolean = false,
     val promptFound: Boolean = false,
     val submitFound: Boolean = false,
-    val markerFound: Boolean = false
+    val markerFound: Boolean = false,
+    val composerKind: String = "unknown"
 )
 
 interface SnapshotProvider {
@@ -62,7 +63,8 @@ object SnapshotParser {
                 error = bool("error"),
                 promptFound = bool("promptFound"),
                 submitFound = bool("submitFound"),
-                markerFound = bool("markerFound")
+                markerFound = bool("markerFound"),
+                composerKind = obj["composerKind"]?.jsonPrimitive?.content ?: "unknown"
             )
         }.getOrNull()
     }

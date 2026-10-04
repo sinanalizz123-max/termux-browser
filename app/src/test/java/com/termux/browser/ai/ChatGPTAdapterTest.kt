@@ -48,6 +48,26 @@ class ChatGPTAdapterTest {
     }
 
     @Test
+    fun `enter-capable composer counts as submit control`() {
+        val health = adapter.health(
+            Snapshot(promptFound = true, submitFound = false, composerKind = "contenteditable"),
+            "https://chatgpt.com/"
+        )
+        assertTrue(health.promptInput)
+        assertTrue(health.submitControl)
+    }
+
+    @Test
+    fun `unknown composer without button fails closed`() {
+        val health = adapter.health(
+            Snapshot(promptFound = true, submitFound = false, composerKind = "unknown"),
+            "https://chatgpt.com/"
+        )
+        assertTrue(health.promptInput)
+        assertFalse(health.submitControl)
+    }
+
+    @Test
     fun `missing controls fail the gate closed`() {
         val noPrompt = adapter.health(
             Snapshot(promptFound = false, submitFound = true),

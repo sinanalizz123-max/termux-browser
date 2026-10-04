@@ -38,6 +38,17 @@ class JsPromptTest {
     }
 
     @Test
+    fun `enter fallback reports its method`() {
+        val script = JsPrompt.submitScript("\"hi\"", "[\"textarea\"]", "[]")
+        // No submit candidates: falls back to the composer's native Enter.
+        assertTrue(script.contains("KeyboardEvent"))
+        assertTrue(script.contains("R.method='enter'"))
+        assertTrue(script.contains("R.method='button'"))
+        // Bridge cleanup still unconditional.
+        assertTrue(script.contains("delete window.__tbPrompt"))
+    }
+
+    @Test
     fun `candidate indices are baked as integers`() {
         val script = JsPrompt.submitScript("\"hi\"", "[\"a\"]", "[\"b\"]", 2, 1)
         assertTrue(script.contains("k!=2"))

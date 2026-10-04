@@ -61,23 +61,29 @@ class ChatGPTAdapter : SiteAdapter {
         val stop = json.encodeToString(STOP_CANDIDATES)
         val submit = json.encodeToString(SUBMIT_CANDIDATES)
         return "(function(){function any(L){for(var k=0;k<L.length;k++){try{if(document.querySelector(L[k]))return true;}catch(e){}}return false;}" +
+            "function first(L){for(var k=0;k<L.length;k++){try{var e=document.querySelector(L[k]);if(e)return e;}catch(_){}}return null;}" +
             "var P=$prompt;var M=$messages;var S=$stop;var U=$submit;" +
             "var nodes=[];for(var k=0;k<M.length;k++){try{var f=document.querySelectorAll(M[k]);for(var j=0;j<f.length;j++){nodes.push(f[j]);}}catch(e){}}" +
             "var last=nodes.length?nodes[nodes.length-1].innerText:'';" +
             "var body=(document.body?document.body.innerText:'').slice(0,2000);" +
-            "var promptFound=any(P);" +
+            "var pe=first(P);var promptFound=!!pe;" +
+            "var composerKind=!pe?'none':((pe.tagName==='TEXTAREA'||pe.tagName==='INPUT')?'textarea':(pe.isContentEditable?'contenteditable':'unknown'));" +
             "return JSON.stringify({messageCount:nodes.length,lastText:(last||'').slice(-4000)," +
-            "promptFound:promptFound,submitFound:any(U),generating:any(S)," +
+            "promptFound:promptFound,submitFound:any(U),generating:any(S),composerKind:composerKind," +
             "loginRequired:!promptFound&&/log\\s*in|sign\\s*up/i.test(body)})})()"
     }
 
     override fun health(snapshot: Snapshot, url: String): AdapterHealth {
         val recognized = detect(url)
+        // Submit control: an explicit submit button, or a composer whose
+        // native affordance is Enter-to-send (its own confirmed element).
+        val enterCapable = snapshot.composerKind == "textarea" ||
+            snapshot.composerKind == "contenteditable"
         return AdapterHealth(
             site = id,
             recognized = recognized,
             promptInput = recognized && snapshot.promptFound,
-            submitControl = recognized && snapshot.submitFound,
+            submitControl = recognized && (snapshot.submitFound || enterCapable),
             responseContainer = recognized && snapshot.messageCount > 0,
             loginState = if (snapshot.loginRequired) "logged_out" else "unknown",
             adapterVersion = VERSION,

@@ -55,8 +55,10 @@ object JsPrompt {
             "else{R.reason='prompt-readonly';return JSON.stringify(R);}" +
             "var se=null;for(var j=0;j<S.length;j++){if(${submitIndex}>=0&&j!=${submitIndex})continue;" +
             "try{var b=document.querySelector(S[j]);if(b){se=b;R.submitIndex=j;break;}}catch(_){}}" +
-            "if(!se){R.reason='no-submit';return JSON.stringify(R);}" +
-            "se.click();R.submitted=true;" +
+            "if(se){se.click();R.submitted=true;R.method='button';}" +
+            "else{" +
+            "var ke=new KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true,cancelable:true});" +
+            "pe.dispatchEvent(ke);R.submitted=true;R.method='enter';}" +
             "}finally{try{delete window.__tbPrompt;}catch(_){window.__tbPrompt=null;}}" +
             "return JSON.stringify(R);})()"
     }
