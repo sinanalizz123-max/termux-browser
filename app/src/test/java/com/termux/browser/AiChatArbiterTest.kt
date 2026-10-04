@@ -376,7 +376,7 @@ class AiChatArbiterTest {
             val id = (submitted as SubmitResult.Accepted).commandId
             // The site navigates to the new chat shortly after submit,
             // exactly like the real flow under test.
-            kotlinx.coroutines.launch {
+            this.launch {
                 kotlinx.coroutines.delay(1000)
                 current = "https://chatgpt.com/c/new-chat-id"
             }
