@@ -97,6 +97,34 @@ object JsPrompt {
             "return JSON.stringify({x:r.x,y:r.y,w:r.width,h:r.height});}" +
             "catch(_){return JSON.stringify(null);}})()"
 
+    /**
+     * Pre-tap semantic validation. Resolves [selectorJson] and reports
+     * structure only — tag, role, visibility, geometry, and whether the
+     * node is the adapter's structural send anchor. No text, names,
+     * values, or URLs ever leave the page. A stale teaching (e.g. one
+     * that now matches a toggle) fails [SendTargetValidator] instead of
+     * receiving a genuine tap.
+     */
+    fun validateSendScript(selectorJson: String, anchorJson: String, anchorLast: Boolean): String {
+        val last = if (anchorLast) "true" else "false"
+        return "(function(){var R={found:false,__tbValidate:true};" +
+            "try{" +
+            "var e=document.querySelector($selectorJson);" +
+            "if(!e)return JSON.stringify(R);" +
+            "var r=e.getBoundingClientRect();" +
+            "var vw=window.innerWidth||0;var vh=window.innerHeight||0;" +
+            "R.found=true;" +
+            "R.tag=e.tagName||'';R.role=e.getAttribute?(e.getAttribute('role')||''):'';" +
+            "R.x=r.x;R.y=r.y;R.w=r.width;R.h=r.height;" +
+            "R.visible=r.width>0&&r.height>0&&r.bottom>0&&r.right>0&&r.top<vh&&r.left<vw;" +
+            "try{var aq=$anchorJson;var a=null;" +
+            "if($last){var all=document.querySelectorAll(aq);if(all.length)a=all[all.length-1];}" +
+            "else{a=document.querySelector(aq);}" +
+            "R.anchorFound=!!a;R.matchesAnchor=!!a&&a===e;}catch(_){R.anchorFound=false;R.matchesAnchor=false;}" +
+            "}catch(_){}" +
+            "return JSON.stringify(R);})()"
+    }
+
     /** Shared composer-fill fragment: set text, notify the framework. */
     private fun fillBody(): String =
         "var text=window.__tbPrompt;" +

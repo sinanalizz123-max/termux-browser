@@ -111,6 +111,14 @@ Same bearer auth as everything else. No logcat, no special permission:
   `NOT_FOUND`, `RESULT_NOT_FOUND`, `BUSY`, `CANCELLED`.
 - Domain: `LOGIN_REQUIRED`, `CAPTCHA_DETECTED`, `USER_TAKEOVER`,
   `NAVIGATION_CHANGED`, `TIMEOUT`, `DOM_CHANGED`, `AI_ERROR`.
+- AI submit (fail-closed, never retried blindly): `ADAPTER_NOT_FOUND`
+  (no adapter owns the page), `HEALTH_CHECK_FAILED` (controls not
+  confirmed), `SUBMIT_FALSE` (fill failed or nothing dispatched),
+  `SUBMIT_UNCONFIRMED` (dispatched but no evidence), `SUBMIT_AMBIGUOUS`
+  (dispatched with partial evidence such as same-host navigation —
+  observe, do not resend), `SEND_SELECTOR_NOT_FOUND` (nothing taught for
+  this page route), `SEND_TARGET_VALIDATION_FAILED` (taught selector no
+  longer resolves to the send control; marked stale).
 
 ## Read scopes
 

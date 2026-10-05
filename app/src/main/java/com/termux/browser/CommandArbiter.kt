@@ -202,16 +202,19 @@ class CommandArbiter(
         val detected = registry.detect(pageUrl)
         // Fail closed: unknown page or generic fallback never submits.
         if (detected == null || detected.hosts.isEmpty()) {
-            return failed(ErrorCodes.ADAPTER_UNRECOGNIZED)
+            return failed(ErrorCodes.ADAPTER_NOT_FOUND)
         }
         if (cmd.site.isNotBlank() && detected.id != cmd.site) {
             return failed(ErrorCodes.INVALID_REQUEST)
         }
-        // Learn mode upgrade: a user-taught send selector leads, with
-        // detection/health/waiting still owned by the base adapter.
-        val learned = learnedStore?.get(registry.hostOf(pageUrl))?.sendSelector
+        // Context-scoped learning: only a teaching from THIS page context
+        // (e.g. DeepSeek "/a") may drive the submit tap. A teaching from a
+        // different route is never trusted here.
+        val pageHost = registry.hostOf(pageUrl)
+        val pageContext = com.termux.browser.ai.pageContext(pageUrl)
+        val learned = learnedStore?.getControl(pageHost, "send", pageContext)
         val adapter = if (!learned.isNullOrBlank()) {
-            bus.publish(EventTypes.LEARNED_OVERRIDE, detail = registry.hostOf(pageUrl))
+            bus.publish(EventTypes.LEARNED_OVERRIDE, detail = "$pageHost/${pageContext}")
             LearnedAdapter(detected, learned)
         } else {
             detected
@@ -223,7 +226,7 @@ class CommandArbiter(
         val health = adapter.health(probeSnap, pageUrl)
         if (health.loginState == "logged_out") return failed(ErrorCodes.LOGIN_REQUIRED)
         if (!health.promptInput || !health.submitControl) {
-            return failed(ErrorCodes.ADAPTER_UNRECOGNIZED)
+            return failed(ErrorCodes.HEALTH_CHECK_FAILED)
         }
         val boundedPrompt = cmd.prompt.take(cmd.maxChars.coerceIn(1, ProtocolLimits.MAX_READ_CHARS))
         val selectors = adapter.selectors()
@@ -236,20 +239,24 @@ class CommandArbiter(
             val submitted = if (learned.isNullOrBlank()) {
                 submitViaScript(boundedPrompt, selectors)
             } else {
-                submitViaLearnedTap(boundedPrompt, selectors, learned)
+                submitViaLearnedTap(boundedPrompt, selectors, learned, pageHost, pageContext, detected)
             }
-            if (!submitted) return failed(ErrorCodes.ADAPTER_UNRECOGNIZED)
+            if (submitted != SubmitOutcome.DISPATCHED) return failed(ErrorCodes.SUBMIT_FALSE)
 
-            // Send verification: the script claiming success is not enough.
-            // A new message, a drained composer, or a same-host navigation
-            // must confirm it. Otherwise fail fast instead of waiting
-            // minutes for a response to nothing.
-            if (!confirmSend(adapter, baseCount, pageUrl)) {
-                return failed(ErrorCodes.SUBMIT_UNCONFIRMED)
+            // Send verification with navigation awareness: the tap may have
+            // fired while the page moves to the new chat route. QUIET means
+            // nothing happened (fail fast); AMBIGUOUS means a tap probably
+            // fired but evidence is inconclusive — never tap again here.
+            when (confirmSend(adapter, baseCount, pageUrl)) {
+                ConfirmOutcome.CONFIRMED -> Unit
+                ConfirmOutcome.QUIET -> return failed(ErrorCodes.SUBMIT_UNCONFIRMED)
+                ConfirmOutcome.AMBIGUOUS -> return failed(ErrorCodes.SUBMIT_AMBIGUOUS)
             }
 
             val startGen = policy.generation
-            val startUrl = pageUrl
+            // Re-anchor the waiter on the post-confirm page: a same-host
+            // navigation to the new chat route is normal app flow.
+            val startUrl = ui.run { host.currentUrl() } ?: pageUrl
             val provider = object : SnapshotProvider {
                 override suspend fun snapshot(): Snapshot {
                     val raw = ui.run { host.evalJs(adapter.snapshotScript()) }
@@ -314,9 +321,11 @@ class CommandArbiter(
     }
 
     /**
-     * Replays a user-taught control: resolves the learned selector for the
-     * current host, probes its live rectangle, and taps its center with
-     * genuine platform input. Fails closed when nothing was ever taught.
+     * Replays a user-taught control with genuine platform input. Prefers
+     * the teaching for the current page context; a host-level teaching
+     * from another route is reported as not-found for this page instead
+     * of being trusted blindly. The send control additionally passes
+     * semantic validation — a stale teaching never receives the tap.
      */
     private suspend fun executeTapControl(cmd: BrowserCommand.TapControl): String {
         if (!cmd.control.matches(Regex("[a-z]{1,16}"))) {
@@ -324,8 +333,26 @@ class CommandArbiter(
         }
         val store = learnedStore ?: return failed(ErrorCodes.LEARNED_CONTROL_MISSING)
         val pageUrl = ui.run { host.currentUrl() } ?: return failed(ErrorCodes.INVALID_REQUEST)
-        val selector = store.getControl(registry.hostOf(pageUrl), cmd.control)
-            ?: return failed(ErrorCodes.LEARNED_CONTROL_MISSING)
+        val pageHost = registry.hostOf(pageUrl)
+        val pageContext = com.termux.browser.ai.pageContext(pageUrl)
+        val scoped = store.getControl(pageHost, cmd.control, pageContext)
+        val selector = scoped ?: store.getControl(pageHost, cmd.control)
+        if (selector == null) return failed(ErrorCodes.LEARNED_CONTROL_MISSING)
+        if (scoped == null) return failed(ErrorCodes.SEND_SELECTOR_NOT_FOUND)
+        if (cmd.control == "send") {
+            val detected = registry.detect(pageUrl)
+            val validation = validateSendTarget(selector, detected ?: com.termux.browser.ai.GenericAdapter())
+            if (!validation.valid) {
+                store.markStale(pageHost, cmd.control, pageContext)
+                return failed(ErrorCodes.SEND_TARGET_VALIDATION_FAILED)
+            }
+            val tapped = tappedAtRect(validation.rectJson)
+            return if (tapped) {
+                """{"state":"completed","control":${json.encodeToString(cmd.control)}}"""
+            } else {
+                failed(ErrorCodes.CLICK_MISSED)
+            }
+        }
         val script = "(function(){try{var e=document.querySelector(" +
             json.encodeToString(selector) +
             ");if(!e)return JSON.stringify(null);var r=e.getBoundingClientRect();" +
@@ -381,18 +408,28 @@ class CommandArbiter(
         return 0
     }
 
+    /** Submit step outcome. Only DISPATCHED means input reached the page. */
+    private enum class SubmitOutcome { FAILED, DISPATCHED }
+
+    /** Confirm step outcome. AMBIGUOUS never triggers another tap. */
+    private enum class ConfirmOutcome { CONFIRMED, QUIET, AMBIGUOUS }
+
     private suspend fun submitViaScript(
         boundedPrompt: String,
         selectors: com.termux.browser.ai.SelectorSet
-    ): Boolean {
-        if (fillVerified(boundedPrompt, selectors) <= 0) return false
+    ): SubmitOutcome {
+        if (fillVerified(boundedPrompt, selectors) <= 0) return SubmitOutcome.FAILED
         val submitScript = JsPrompt.submitScript(
             JsPrompt.quotedPrompt(boundedPrompt),
             JsPrompt.quotedStringList(selectors.prompt),
             JsPrompt.quotedStringList(selectors.submit)
         )
         val ack = parseJsObject(ui.run { host.evalJs(submitScript) })
-        return ack?.get("submitted")?.jsonPrimitive?.content == "true"
+        return if (ack?.get("submitted")?.jsonPrimitive?.content == "true") {
+            SubmitOutcome.DISPATCHED
+        } else {
+            SubmitOutcome.FAILED
+        }
     }
 
     /**
@@ -400,26 +437,90 @@ class CommandArbiter(
      * the taught control with genuine platform input. Returns true only
      * when the tap actually dispatched.
      */
+    /**
+     * Learned submit: fill the composer, validate the taught selector
+     * still resolves to the real send control, then tap it with genuine
+     * platform input. A teaching that now matches something else is
+     * marked stale and the adapter script path takes over — never tap
+     * a control that failed validation.
+     */
     private suspend fun submitViaLearnedTap(
         boundedPrompt: String,
         selectors: com.termux.browser.ai.SelectorSet,
-        learned: String
-    ): Boolean {
-        if (fillVerified(boundedPrompt, selectors) <= 0) return false
+        learned: String,
+        pageHost: String,
+        pageContext: String,
+        base: com.termux.browser.ai.SiteAdapter
+    ): SubmitOutcome {
+        if (fillVerified(boundedPrompt, selectors) <= 0) return SubmitOutcome.FAILED
         // Let the framework re-render settle: filling detaches/replaces DOM
-        // nodes, so a rect probed instantly can belong to a dying tree.
-        // Then re-probe fresh up to 3 times; any dispatched tap counts.
+        // nodes, so validation immediately after can hit a dying tree.
+        // Only a dispatched tap counts as DISPATCHED, so a tap retry can
+        // never double-send. A teaching that fails validation twice is
+        // stale (the DOM moved on): mark it and fall back to the adapter
+        // script path rather than tapping the wrong control.
         kotlinx.coroutines.delay(2000)
-        repeat(3) {
-            // The learned value is a selector, but quoting is quoting: any
-            // string becomes a safe JSON string literal the same way.
-            val rectRaw = ui.run {
-                host.evalJs(JsPrompt.rectScript(JsPrompt.quotedPrompt(learned)))
-            }
-            if (tappedAtRect(rectRaw)) return true
-            kotlinx.coroutines.delay(1000)
+        var validatedOnce = false
+        repeat(2) { attempt ->
+            if (attempt > 0) kotlinx.coroutines.delay(1000)
+            val validation = validateSendTarget(learned, base)
+            if (!validation.valid) return@repeat
+            validatedOnce = true
+            if (tappedAtRect(validation.rectJson)) return SubmitOutcome.DISPATCHED
         }
-        return false
+        if (!validatedOnce) {
+            learnedStore?.markStale(pageHost, "send", pageContext)
+            bus.publish(
+                EventTypes.COMMAND_FAILED,
+                detail = "learned-send-stale:$pageHost/$pageContext"
+            )
+            return submitViaScript(boundedPrompt, selectors)
+        }
+        return SubmitOutcome.FAILED
+    }
+
+    private data class SendValidation(val valid: Boolean, val rectJson: String?)
+
+    /**
+     * Resolves a learned selector to structure (never content) and checks
+     * it against the adapter's send anchor. Single round trip: the same
+     * response carries the tap rectangle, keeping probe-to-tap tight.
+     */
+    private suspend fun validateSendTarget(
+        learned: String,
+        base: com.termux.browser.ai.SiteAdapter
+    ): SendValidation {
+        val anchor = base.sendAnchor()
+        val raw = ui.run {
+            host.evalJs(
+                JsPrompt.validateSendScript(
+                    JsPrompt.quotedPrompt(learned),
+                    JsPrompt.quotedPrompt(anchor?.selector ?: ""),
+                    anchor?.last == true
+                )
+            )
+        }
+        val ack = parseJsObject(raw)
+        fun str(key: String) = ack?.get(key)?.jsonPrimitive?.content ?: ""
+        fun num(key: String) = str(key).toDoubleOrNull()
+        val valid = com.termux.browser.ai.SendTargetValidator.isSendTarget(
+            found = str("found") == "true",
+            tag = str("tag"),
+            role = str("role"),
+            visible = str("visible") == "true",
+            w = num("w") ?: 0.0,
+            h = num("h") ?: 0.0,
+            anchorFound = str("anchorFound") == "true",
+            matchesAnchor = str("matchesAnchor") == "true"
+        )
+        if (!valid) return SendValidation(false, null)
+        val x = num("x") ?: return SendValidation(false, null)
+        val y = num("y") ?: return SendValidation(false, null)
+        val w = num("w") ?: 0.0
+        val h = num("h") ?: 0.0
+        if (w <= 0 || h <= 0) return SendValidation(false, null)
+        val rect = """{"x":$x,"y":$y,"w":$w,"h":$h}"""
+        return SendValidation(true, rect)
     }
 
     private suspend fun tappedAtRect(rectRaw: String?): Boolean {
@@ -444,26 +545,36 @@ class CommandArbiter(
      * send. Message counters alone are unreliable: some sites' selectors
      * match static decoration rather than messages.
      */
+    /**
+     * Navigation-aware send confirmation, bounded at ~15s. A same-host
+     * route change (e.g. DeepSeek landing on /a/chat/s/<id>) is treated
+     * as possible evidence of a send: polling continues on the new page
+     * instead of failing. At timeout, an observed same-host navigation
+     * yields AMBIGUOUS — the tap may have fired, so the caller must NOT
+     * tap again. Bare count movement alone is not evidence (snapshot
+     * noise); only total quiet without navigation is QUIET.
+     */
     private suspend fun confirmSend(
         adapter: com.termux.browser.ai.SiteAdapter,
         baseCount: Int,
         startUrl: String
-    ): Boolean {
+    ): ConfirmOutcome {
         val startHost = registry.hostOf(startUrl)
         val startPath = UrlPolicy.pathOf(startUrl)
-        repeat(20) {
+        var navigated = false
+        repeat(30) {
             val snap = SnapshotParser.parse(ui.run { host.evalJs(adapter.snapshotScript()) })
                 ?: Snapshot()
-            if (snap.messageCount > baseCount || snap.composerEmpty) return true
+            if (snap.messageCount > baseCount || snap.composerEmpty) return ConfirmOutcome.CONFIRMED
             val now = ui.run { host.currentUrl() }
             if (now != null && registry.hostOf(now) == startHost &&
                 UrlPolicy.pathOf(now) != startPath
             ) {
-                return true
+                navigated = true
             }
             kotlinx.coroutines.delay(500)
         }
-        return false
+        return if (navigated) ConfirmOutcome.AMBIGUOUS else ConfirmOutcome.QUIET
     }
 
     /**

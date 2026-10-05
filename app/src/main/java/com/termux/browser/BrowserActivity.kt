@@ -81,15 +81,26 @@ class BrowserActivity : Activity(), PageHost {
     /** One-shot capture target ("send", "menu", …); null when disarmed. */
     internal var learnTarget: String? = null
 
+    /** Drawer was open when learn mode armed; restored on disarm. */
+    internal var learnDrawerOpen = false
+
     internal fun armLearn(control: String) {
         learnMode = true
         learnTarget = control
+        // Slide the drawer away so the page target is directly tappable;
+        // disarm restores it, including cancellation paths.
+        learnDrawerOpen = drawerLayout.isDrawerOpen(GravityCompat.START)
+        if (learnDrawerOpen) drawerLayout.closeDrawer(GravityCompat.START)
         announce("LEARN MODE: tap the $control button.")
     }
 
     internal fun disarmLearn() {
         learnMode = false
         learnTarget = null
+        if (learnDrawerOpen) {
+            learnDrawerOpen = false
+            drawerLayout.openDrawer(GravityCompat.START)
+        }
     }
     private val activityScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val uiRunner = object : UiRunner {
@@ -649,9 +660,13 @@ class BrowserActivity : Activity(), PageHost {
             }.getOrNull()
             val info = com.termux.browser.ai.parseElementInfo(raw) ?: return@launch
             val selector = com.termux.browser.ai.LearnedSelectors.derive(info) ?: return@launch
-            learnedStore.putControl(host, control, selector)
+            // Scope the teaching to the page route it was taught on, so it
+            // can never drive a tap on a different route's DOM.
+            val taughtUrl = withContext(Dispatchers.Main) { webView.url ?: "" }
+            val context = com.termux.browser.ai.pageContext(taughtUrl)
+            learnedStore.putControl(host, control, selector, context)
             withContext(Dispatchers.Main) {
-                announce("Learned $control for $host: $selector")
+                announce("Learned $control for $host/$context: $selector")
             }
         }
     }

@@ -126,7 +126,7 @@ class DeepSeekArbiterTest {
             )
             val id = (submitted as SubmitResult.Accepted).commandId
             val stored = awaitResult(results, id)
-            assertTrue(stored.body.contains("ADAPTER_UNRECOGNIZED"))
+            assertTrue(stored.body.contains("HEALTH_CHECK_FAILED"))
             assertEquals(0, host.submitted)
         } finally {
             arbiter.close()
@@ -165,7 +165,7 @@ class DeepSeekArbiterTest {
             )
             val id = (submitted as SubmitResult.Accepted).commandId
             val stored = awaitResult(results, id)
-            assertTrue(stored.body.contains("ADAPTER_UNRECOGNIZED"))
+            assertTrue(stored.body.contains("SUBMIT_FALSE"))
             // The submit script ran (self-cleaning finally) plus the native
             // best-effort clear.
             assertTrue(host.scripts.any { it.contains("delete window.__tbPrompt") })

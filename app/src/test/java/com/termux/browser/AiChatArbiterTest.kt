@@ -153,7 +153,7 @@ class AiChatArbiterTest {
             )
             val id = (submitted as SubmitResult.Accepted).commandId
             val stored = awaitResult(results, id)
-            assertTrue(stored.body.contains("ADAPTER_UNRECOGNIZED"))
+            assertTrue(stored.body.contains("HEALTH_CHECK_FAILED"))
             assertEquals(0, host.submitted)
         } finally {
             arbiter.close()
@@ -171,7 +171,7 @@ class AiChatArbiterTest {
             )
             val id = (submitted as SubmitResult.Accepted).commandId
             val stored = awaitResult(results, id)
-            assertTrue(stored.body.contains("ADAPTER_UNRECOGNIZED"))
+            assertTrue(stored.body.contains("ADAPTER_NOT_FOUND"))
             assertEquals(0, host.submitted)
         } finally {
             arbiter.close()
@@ -205,6 +205,9 @@ class AiChatArbiterTest {
             override suspend fun evalJs(script: String): String? {
                 host.scripts.add(script)
                 if (script.contains("R.filled")) return """{"filled":true,"verifyLen":5}"""
+                if (script.contains("__tbValidate")) {
+                    return """{"found":true,"tag":"DIV","role":"button","visible":true,"x":50,"y":60,"w":20,"h":20,"anchorFound":false,"matchesAnchor":false}"""
+                }
                 if (script.contains("getBoundingClientRect")) {
                     return "\"{\\\"x\\\":50,\\\"y\\\":60,\\\"w\\\":20,\\\"h\\\":20}\""
                 }
@@ -224,7 +227,8 @@ class AiChatArbiterTest {
         dir.mkdirs()
         try {
             val learned = com.termux.browser.ai.LearnedStore(dir)
-            learned.put("chatgpt.com", "div.learned-send")
+            // Taught on this exact page context ("c" from /c/123).
+            learned.putControl("chatgpt.com", "send", "div.learned-send", "c")
             val policy = ControlPolicy()
             val controller = BrowserController(tappingHost, policy, ActivityLog(), announce = {})
             val ui = object : UiRunner {
@@ -274,8 +278,16 @@ class AiChatArbiterTest {
                 BrowserCommand.AiChat("chatgpt", "Hi.", 100, "termux")
             )
             val id = (submitted as SubmitResult.Accepted).commandId
-            val stored = awaitResult(results, id)
-            assertTrue(stored.body.contains("SUBMIT_UNCONFIRMED"))
+            // Confirm runs its full bounded window here (~15s).
+            val stored = withTimeout(40000) {
+                var s = results.get(id)
+                while (s == null) {
+                    delay(100)
+                    s = results.get(id)
+                }
+                s
+            }
+            assertTrue(stored!!.body.contains("SUBMIT_UNCONFIRMED"))
         } finally {
             arbiter.close()
         }
@@ -291,6 +303,9 @@ class AiChatArbiterTest {
                 host.scripts.add(script)
                 if (script.contains("R.filled")) {
                     return """{"filled":true,"verifyLen":5}"""
+                }
+                if (script.contains("__tbValidate")) {
+                    return """{"found":true,"tag":"DIV","role":"button","visible":true,"x":100,"y":200,"w":10,"h":10,"anchorFound":false,"matchesAnchor":false}"""
                 }
                 if (script.contains("getBoundingClientRect")) {
                     return "\"{\\\"x\\\":100,\\\"y\\\":200,\\\"w\\\":10,\\\"h\\\":10}\""
@@ -311,7 +326,7 @@ class AiChatArbiterTest {
         dir.mkdirs()
         try {
             val learned = com.termux.browser.ai.LearnedStore(dir)
-            learned.put("chatgpt.com", "div.send")
+            learned.putControl("chatgpt.com", "send", "div.send", "c")
             val policy = ControlPolicy()
             val controller = BrowserController(tappingHost, policy, ActivityLog(), announce = {})
             val ui = object : UiRunner {
@@ -344,7 +359,7 @@ class AiChatArbiterTest {
     }
 
     @Test
-    fun `same-host navigation confirms the send`() = runBlocking {
+    fun `same-host navigation keeps polling until message evidence confirms`() = runBlocking {
         fun snap(count: Int, text: String, generating: Boolean = false) =
             """{"messageCount":$count,"lastText":"$text","generating":$generating,"promptFound":true,"submitFound":true}"""
         val host = FakeHost()
@@ -386,9 +401,12 @@ class AiChatArbiterTest {
                 current = "https://chatgpt.com/c/new-chat-id"
             }
             val stored = awaitResult(results, id)
-            // Navigation confirmed the send; the scripted answer completes.
-            // What must NOT happen is SUBMIT_UNCONFIRMED.
+            // Navigation alone never confirms; message evidence on the new
+            // page does, and the scripted answer completes. Neither quiet
+            // nor ambiguous failure may appear.
+            assertTrue(stored.body.contains("completed"))
             assertFalse(stored.body.contains("SUBMIT_UNCONFIRMED"))
+            assertFalse(stored.body.contains("SUBMIT_AMBIGUOUS"))
         } finally {
             arbiter.close()
         }
@@ -447,6 +465,221 @@ class AiChatArbiterTest {
             assertEquals(2, fills)
         } finally {
             arbiter.close()
+        }
+    }
+
+    @Test
+    fun `scoped teaching is not trusted on another route`() = runBlocking {
+        val dir = java.io.File(
+            System.getProperty("java.io.tmpdir"),
+            "tb-scope-${System.nanoTime()}"
+        )
+        dir.mkdirs()
+        try {
+            val learned = com.termux.browser.ai.LearnedStore(dir)
+            // Taught inside /c/123, but this run is on the home page.
+            learned.putControl("chatgpt.com", "send", "div.learned-send", "c")
+            // Home page: context "" — the /c teaching must not apply.
+            val host = FakeHost("https://chatgpt.com/")
+            host.snapshots.addAll(
+                listOf(
+                    healthy(), healthy(),
+                    streaming("answ"), streaming("answer"),
+                    streaming("answer!", generating = false),
+                    streaming("answer!", generating = false),
+                    streaming("answer!", generating = false),
+                    streaming("answer!", generating = false),
+                    streaming("answer!", generating = false)
+                )
+            )
+            var tappedAt: Pair<Double, Double>? = null
+            val tappingHost = object : PageHost by host {
+                override suspend fun evalJs(script: String): String? {
+                    host.scripts.add(script)
+                    if (script.contains("R.filled")) return """{"filled":true,"verifyLen":5}"""
+                    return host.evalJs(script)
+                }
+
+                override suspend fun tap(xCss: Double, yCss: Double): Boolean {
+                    tappedAt = xCss to yCss
+                    return true
+                }
+            }
+            val results = ResultStore()
+            val policy = ControlPolicy()
+            val controller = BrowserController(tappingHost, policy, ActivityLog(), announce = {})
+            val ui = object : UiRunner {
+                override suspend fun <T> run(block: suspend () -> T): T = block()
+            }
+            val arbiter = CommandArbiter(
+                this, ui, tappingHost, controller, policy, results,
+                registry = AdapterRegistry(listOf(ChatGPTAdapter(), GenericAdapter())),
+                learnedStore = learned
+            )
+            try {
+                val submitted = arbiter.submit(
+                    BrowserCommand.AiChat("chatgpt", "Hi.", 100, "termux")
+                )
+                val id = (submitted as SubmitResult.Accepted).commandId
+                val stored = awaitResult(results, id)
+                // Adapter script path served: submitted once, never tapped.
+                assertTrue(stored!!.body.contains("completed"))
+                assertEquals(1, host.submitted)
+                assertNull(tappedAt)
+            } finally {
+                arbiter.close()
+            }
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `stale teaching falls back to adapter script without tapping`() = runBlocking {
+        val dir = java.io.File(
+            System.getProperty("java.io.tmpdir"),
+            "tb-stale-${System.nanoTime()}"
+        )
+        dir.mkdirs()
+        try {
+            val learned = com.termux.browser.ai.LearnedStore(dir)
+            // Taught for this exact context, but the DOM moved: the
+            // selector now matches a non-button control (a toggle).
+            learned.putControl("chatgpt.com", "send", "div.stale-toggle", "c")
+            val host = FakeHost()
+            host.snapshots.addAll(
+                listOf(
+                    healthy(), healthy(),
+                    streaming("answ"), streaming("answer"),
+                    streaming("answer!", generating = false),
+                    streaming("answer!", generating = false),
+                    streaming("answer!", generating = false),
+                    streaming("answer!", generating = false),
+                    streaming("answer!", generating = false)
+                )
+            )
+            var tappedAt: Pair<Double, Double>? = null
+            val tappingHost = object : PageHost by host {
+                override suspend fun evalJs(script: String): String? {
+                    host.scripts.add(script)
+                    if (script.contains("R.filled")) return """{"filled":true,"verifyLen":5}"""
+                    if (script.contains("__tbValidate")) {
+                        return """{"found":true,"tag":"DIV","role":"","visible":true,"x":50,"y":60,"w":20,"h":20,"anchorFound":false,"matchesAnchor":false}"""
+                    }
+                    return host.evalJs(script)
+                }
+
+                override suspend fun tap(xCss: Double, yCss: Double): Boolean {
+                    tappedAt = xCss to yCss
+                    return true
+                }
+            }
+            val results = ResultStore()
+            val policy = ControlPolicy()
+            val controller = BrowserController(tappingHost, policy, ActivityLog(), announce = {})
+            val ui = object : UiRunner {
+                override suspend fun <T> run(block: suspend () -> T): T = block()
+            }
+            val arbiter = CommandArbiter(
+                this, ui, tappingHost, controller, policy, results,
+                registry = AdapterRegistry(listOf(ChatGPTAdapter(), GenericAdapter())),
+                learnedStore = learned
+            )
+            try {
+                val submitted = arbiter.submit(
+                    BrowserCommand.AiChat("chatgpt", "Hi.", 100, "termux")
+                )
+                val id = (submitted as SubmitResult.Accepted).commandId
+                val stored = awaitResult(results, id)
+                // Wrong control never tapped; adapter script completed.
+                assertTrue(stored!!.body.contains("completed"))
+                assertNull(tappedAt)
+                assertEquals(1, host.submitted)
+                // Teaching marked stale so the next run skips it directly.
+                assertNull(learned.getControl("chatgpt.com", "send", "c"))
+            } finally {
+                arbiter.close()
+            }
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `ambiguous confirm after a real tap never taps twice`() = runBlocking {
+        val dir = java.io.File(
+            System.getProperty("java.io.tmpdir"),
+            "tb-ambig-${System.nanoTime()}"
+        )
+        dir.mkdirs()
+        try {
+            val learned = com.termux.browser.ai.LearnedStore(dir)
+            learned.putControl("chatgpt.com", "send", "div.send", "c")
+            fun flat() =
+                """{"messageCount":2,"lastText":"old","generating":false,"promptFound":true,"submitFound":true,"composerEmpty":false}"""
+            val host = FakeHost()
+            // Probe + a long flat run with no composer drain and no new
+            // message: nothing ever confirms the send.
+            host.snapshots.add(
+                """{"messageCount":2,"lastText":"old","generating":false,"promptFound":true,"submitFound":true,"composerEmpty":false}"""
+            )
+            repeat(40) { host.snapshots.add(flat()) }
+            var current = "https://chatgpt.com/c/123"
+            var taps = 0
+            val tappingHost = object : PageHost by host {
+                override fun currentUrl(): String = current
+                override suspend fun evalJs(script: String): String? {
+                    host.scripts.add(script)
+                    if (script.contains("R.filled")) return """{"filled":true,"verifyLen":5}"""
+                    if (script.contains("__tbValidate")) {
+                        return """{"found":true,"tag":"DIV","role":"button","visible":true,"x":100,"y":200,"w":10,"h":10,"anchorFound":false,"matchesAnchor":false}"""
+                    }
+                    return host.evalJs(script)
+                }
+
+                override suspend fun tap(xCss: Double, yCss: Double): Boolean {
+                    taps++
+                    return true
+                }
+            }
+            val results = ResultStore()
+            val policy = ControlPolicy()
+            val controller = BrowserController(tappingHost, policy, ActivityLog(), announce = {})
+            val ui = object : UiRunner {
+                override suspend fun <T> run(block: suspend () -> T): T = block()
+            }
+            val arbiter = CommandArbiter(
+                this, ui, tappingHost, controller, policy, results,
+                registry = AdapterRegistry(listOf(ChatGPTAdapter(), GenericAdapter())),
+                learnedStore = learned
+            )
+            try {
+                val submitted = arbiter.submit(
+                    BrowserCommand.AiChat("chatgpt", "Hi.", 100, "termux")
+                )
+                val id = (submitted as SubmitResult.Accepted).commandId
+                // The page moves to the new chat route mid-confirm, exactly
+                // like a send whose evidence never arrives.
+                this.launch {
+                    kotlinx.coroutines.delay(1500)
+                    current = "https://chatgpt.com/c/new-chat-id"
+                }
+                // Confirm runs its full bounded window here (~15s).
+                val stored = withTimeout(40000) {
+                    var s = results.get(id)
+                    while (s == null) {
+                        delay(100)
+                        s = results.get(id)
+                    }
+                    s
+                }
+                assertTrue(stored!!.body.contains("SUBMIT_AMBIGUOUS"))
+                assertEquals(1, taps)
+            } finally {
+                arbiter.close()
+            }
+        } finally {
+            dir.deleteRecursively()
         }
     }
 

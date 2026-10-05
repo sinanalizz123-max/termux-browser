@@ -27,11 +27,50 @@ data class AdapterHealth(
     val uiVariant: String = ""
 )
 
+/** Structural send anchor for pre-tap validation. */
+data class SendAnchor(val selector: String, val last: Boolean = false)
+
+/**
+ * Pre-tap semantic verdict for a learned selector. A stale teaching that
+ * now matches some other control (a toggle, a menu item) must never
+ * receive a genuine tap.
+ */
+object SendTargetValidator {
+    /**
+     * Valid when the node is a visible, sanely-sized button-ish control
+     * AND (when the adapter anchor resolves) the very node the adapter
+     * identifies as the send control.
+     */
+    fun isSendTarget(
+        found: Boolean,
+        tag: String,
+        role: String,
+        visible: Boolean,
+        w: Double,
+        h: Double,
+        anchorFound: Boolean,
+        matchesAnchor: Boolean
+    ): Boolean {
+        if (!found || !visible) return false
+        if (!(w in 12.0..160.0 && h in 12.0..160.0)) return false
+        val buttonish = role.equals("button", ignoreCase = true) ||
+            tag.equals("BUTTON", ignoreCase = true)
+        if (!buttonish) return false
+        // Anchor resolved but points elsewhere: this is not the send
+        // control (stale teaching). Anchor absent: trust buttonish shape.
+        if (anchorFound && !matchesAnchor) return false
+        return true
+    }
+}
+
 interface SiteAdapter {
     val id: String
 
     /** Exact hosts this adapter owns. Empty = generic fallback. */
     val hosts: Set<String>
+
+    /** Structural send anchor, or null when the adapter has none. */
+    fun sendAnchor(): SendAnchor? = null
 
     fun detect(url: String): Boolean
     fun selectors(): SelectorSet

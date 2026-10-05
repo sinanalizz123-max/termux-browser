@@ -6,14 +6,31 @@ import kotlinx.serialization.json.Json
 import java.io.File
 
 /**
- * Learn mode persistence: per-host learned send controls, taught by the
- * user's own taps. Local JSON only. A learned selector upgrades the submit
- * step; detection, health, waiting, and cancellation stay adapter-owned.
+ * Page context: the first path segment of a URL, so teachings from one
+ * route (e.g. DeepSeek "/") are never trusted on another (e.g. DeepSeek
+ * "/a/chat/s/<id>"). Empty for the site home page.
+ */
+fun pageContext(url: String): String {
+    val path = url.substringAfter("://", url).substringAfter('/', "")
+        .substringBefore('?').substringBefore('#')
+    val first = path.split('/').firstOrNull { it.isNotEmpty() } ?: ""
+    return first.take(48).lowercase()
+        .map { if (it.isLetterOrDigit() || it == '-' || it == '_') it else '_' }
+        .joinToString("").trim('_')
+}
+
+/**
+ * Learn mode persistence: learned controls taught by the user's own taps,
+ * scoped by host AND page context. Local JSON only. A learned selector
+ * upgrades the submit step; detection, health, waiting, and cancellation
+ * stay adapter-owned.
  */
 @Serializable
 data class LearnedControl(
     val selector: String = "",
-    val updatedAt: Long = 0L
+    val updatedAt: Long = 0L,
+    val context: String = "",
+    val stale: Boolean = false
 )
 
 @Serializable
@@ -42,31 +59,64 @@ class LearnedStore(
             .getOrNull()?.takeIf { it.sendSelector.isNotBlank() || it.controls.isNotEmpty() }
     }
 
-    /** Named control (e.g. "send", "menu"). Migrates legacy send-only files. */
-    fun getControl(host: String, control: String): String? {
+    /**
+     * Named control (e.g. "send", "menu") for an exact page context.
+     * Cross-context use is callers' responsibility: the submit path must
+     * only request the current page's context, so a teaching from "/"
+     * can never drive a tap on "/a/chat/s/<id>".
+     */
+    fun getControl(host: String, control: String, context: String = ""): String? {
         val controls = get(host) ?: return null
-        if (control == "send" && controls.sendSelector.isNotBlank()) {
-            return controls.sendSelector
+        if (context.isEmpty()) {
+            // Legacy host-level lookup (explicit tap-control path only).
+            if (control == "send" && controls.sendSelector.isNotBlank()) {
+                return controls.sendSelector
+            }
+            return controls.controls[control]?.selector?.takeIf { it.isNotBlank() && !it.stale }
         }
-        return controls.controls[control]?.selector?.takeIf { it.isNotBlank() }
+        val key = scopedKey(context, control)
+        // Scoped map first, then the legacy host-level send selector only
+        // when it was explicitly taught for this same context is impossible
+        // to know — so legacy entries never serve scoped lookups.
+        return controls.controls[key]?.takeIf { it.selector.isNotBlank() && !it.stale }?.selector
     }
 
     fun put(host: String, sendSelector: String) {
         putControl(host, "send", sendSelector)
     }
 
-    fun putControl(host: String, control: String, selector: String) {
+    fun putControl(host: String, control: String, selector: String, context: String = "") {
         require(control.matches(Regex("[a-z]{1,16}")))
         require(selector.isNotBlank())
         require(selector.length <= 500)
+        require(context.length <= 48)
         dir.mkdirs()
         val current = get(host)
-        val merged = (current?.controls ?: emptyMap()) + (control to LearnedControl(selector, clock()))
-        val send = if (control == "send") selector else (current?.sendSelector ?: "")
+        val key = if (context.isEmpty()) control else scopedKey(context, control)
+        val entry = LearnedControl(selector, clock(), context)
+        val merged = (current?.controls ?: emptyMap()) + (key to entry)
+        val send = if (control == "send" && context.isEmpty()) selector else (current?.sendSelector ?: "")
         fileFor(host).writeText(
             json.encodeToString(LearnedControls(send, clock(), merged))
         )
     }
+
+    /**
+     * Marks a teaching stale after it fails semantic validation, so the
+     * next run falls back to the adapter selector instead of tapping a
+     * control that is no longer the send button.
+     */
+    fun markStale(host: String, control: String, context: String = "") {
+        val current = get(host) ?: return
+        val key = if (context.isEmpty()) control else scopedKey(context, control)
+        val entry = current.controls[key] ?: return
+        val merged = current.controls + (key to entry.copy(stale = true, updatedAt = clock()))
+        fileFor(host).writeText(
+            json.encodeToString(LearnedControls(current.sendSelector, clock(), merged))
+        )
+    }
+
+    private fun scopedKey(context: String, control: String) = "$context\u0001$control"
 
     fun clear(host: String) {
         runCatching { fileFor(host).delete() }

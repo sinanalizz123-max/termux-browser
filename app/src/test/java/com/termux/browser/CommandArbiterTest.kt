@@ -474,7 +474,8 @@ class CommandArbiterTest {
         dir.mkdirs()
         try {
             val learned = com.termux.browser.ai.LearnedStore(dir)
-            learned.putControl("example.com", "menu", "button.burger")
+            // Taught on the /menu route where the replay runs.
+            learned.putControl("example.com", "menu", "button.burger", "menu")
             var tapped: Pair<Double, Double>? = null
             val tappingHost = object : PageHost by host {
                 override suspend fun tap(xCss: Double, yCss: Double): Boolean {
@@ -503,6 +504,103 @@ class CommandArbiterTest {
                 val stored = awaitResult(results, id)
                 assertTrue(stored!!.body.contains("completed"))
                 assertEquals(Pair(105.0, 205.0), tapped)
+            } finally {
+                arbiter.close()
+            }
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `tap-control with teaching from another route reports not-found`() = runBlocking {
+        val host = FakeHost()
+        val policy = ControlPolicy()
+        val results = ResultStore()
+        val controller = BrowserController(host, policy, ActivityLog(), announce = {})
+        val dir = java.io.File(
+            System.getProperty("java.io.tmpdir"),
+            "tb-tapctx-${System.nanoTime()}"
+        )
+        dir.mkdirs()
+        try {
+            val learned = com.termux.browser.ai.LearnedStore(dir)
+            // Legacy host-level teaching only (taught before scoping).
+            learned.put("example.com", "div.send")
+            var taps = 0
+            val tappingHost = object : PageHost by host {
+                override suspend fun tap(xCss: Double, yCss: Double): Boolean {
+                    taps++
+                    return true
+                }
+                override suspend fun evalJs(script: String): String? = host.evalJs(script)
+                override fun currentUrl(): String? = host.url
+            }
+            val arbiter = CommandArbiter(
+                this, ui(), tappingHost, controller, policy, results,
+                learnedStore = learned
+            )
+            try {
+                // Different route: the host-level teaching must not serve.
+                host.url = "https://example.com/other"
+                val submitted = arbiter.submit(
+                    BrowserCommand.TapControl("send", "termux")
+                )
+                val id = (submitted as SubmitResult.Accepted).commandId
+                val stored = awaitResult(results, id)
+                assertTrue(stored!!.body.contains("SEND_SELECTOR_NOT_FOUND"))
+                assertEquals(0, taps)
+            } finally {
+                arbiter.close()
+            }
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `tap-control send with stale selector fails validation without tapping`() = runBlocking {
+        val host = FakeHost()
+        val policy = ControlPolicy()
+        val results = ResultStore()
+        val controller = BrowserController(host, policy, ActivityLog(), announce = {})
+        val dir = java.io.File(
+            System.getProperty("java.io.tmpdir"),
+            "tb-tapstale-${System.nanoTime()}"
+        )
+        dir.mkdirs()
+        try {
+            val learned = com.termux.browser.ai.LearnedStore(dir)
+            // Taught for this exact route, but now matches a toggle.
+            learned.putControl("example.com", "send", "div.toggle", "page")
+            var taps = 0
+            val tappingHost = object : PageHost by host {
+                override suspend fun tap(xCss: Double, yCss: Double): Boolean {
+                    taps++
+                    return true
+                }
+                override suspend fun evalJs(script: String): String? {
+                    if (script.contains("__tbValidate")) {
+                        return """{"found":true,"tag":"DIV","role":"","visible":true,"x":10,"y":10,"w":30,"h":30,"anchorFound":false,"matchesAnchor":false}"""
+                    }
+                    return host.evalJs(script)
+                }
+                override fun currentUrl(): String? = host.url
+            }
+            val arbiter = CommandArbiter(
+                this, ui(), tappingHost, controller, policy, results,
+                learnedStore = learned
+            )
+            try {
+                host.url = "https://example.com/page"
+                val submitted = arbiter.submit(
+                    BrowserCommand.TapControl("send", "termux")
+                )
+                val id = (submitted as SubmitResult.Accepted).commandId
+                val stored = awaitResult(results, id)
+                assertTrue(stored!!.body.contains("SEND_TARGET_VALIDATION_FAILED"))
+                assertEquals(0, taps)
+                assertNull(learned.getControl("example.com", "send", "page"))
             } finally {
                 arbiter.close()
             }

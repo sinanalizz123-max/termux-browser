@@ -59,6 +59,14 @@ class DeepSeekAdapter : SiteAdapter {
 
     override fun markerSelector(): String = MARKER_SELECTOR
 
+    /**
+     * Structural send anchor: the rightmost role=button in the composer
+     * row (live-verified the 34x34 send arrow twice). Pre-tap validation
+     * requires a learned selector to resolve to this node.
+     */
+    override fun sendAnchor(): SendAnchor =
+        SendAnchor("div:has(> textarea) + div div[role='button']", last = true)
+
     override fun snapshotScript(): String {
         return buildSnapshotScript(
             PROMPT_CANDIDATES, MESSAGE_CANDIDATES, STOP_CANDIDATES, SUBMIT_CANDIDATES,
