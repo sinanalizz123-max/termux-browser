@@ -10,6 +10,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -279,7 +280,7 @@ class AiChatArbiterTest {
             )
             val id = (submitted as SubmitResult.Accepted).commandId
             // Confirm runs its full bounded window here (~15s).
-            val stored = withTimeout(40000) {
+            val stored: StoredResult? = withTimeout(40000) {
                 var s = results.get(id)
                 while (s == null) {
                     delay(100)
@@ -665,7 +666,7 @@ class AiChatArbiterTest {
                     current = "https://chatgpt.com/c/new-chat-id"
                 }
                 // Confirm runs its full bounded window here (~15s).
-                val stored = withTimeout(40000) {
+                val stored: StoredResult? = withTimeout(40000) {
                     var s = results.get(id)
                     while (s == null) {
                         delay(100)
