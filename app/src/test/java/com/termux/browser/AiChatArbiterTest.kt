@@ -40,6 +40,11 @@ class AiChatArbiterTest {
                 return """{"cleared":true}"""
             }
             if (script.contains("window.__tbPrompt=")) {
+                // Fill-only scripts precede every submit; answer them like
+                // the real bridge so verified fills succeed in tests.
+                if (script.contains("R.filled")) {
+                    return """{"filled":true,"verifyLen":5}"""
+                }
                 submitted++
                 return submitAck
             }
@@ -199,7 +204,7 @@ class AiChatArbiterTest {
         val tappingHost = object : PageHost by host {
             override suspend fun evalJs(script: String): String? {
                 host.scripts.add(script)
-                if (script.contains("R.filled")) return """{"filled":true}"""
+                if (script.contains("R.filled")) return """{"filled":true,"verifyLen":5}"""
                 if (script.contains("getBoundingClientRect")) {
                     return "\"{\\\"x\\\":50,\\\"y\\\":60,\\\"w\\\":20,\\\"h\\\":20}\""
                 }
@@ -285,7 +290,7 @@ class AiChatArbiterTest {
             override suspend fun evalJs(script: String): String? {
                 host.scripts.add(script)
                 if (script.contains("R.filled")) {
-                    return """{"filled":true}"""
+                    return """{"filled":true,"verifyLen":5}"""
                 }
                 if (script.contains("getBoundingClientRect")) {
                     return "\"{\\\"x\\\":100,\\\"y\\\":200,\\\"w\\\":10,\\\"h\\\":10}\""

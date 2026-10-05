@@ -33,6 +33,9 @@ class DeepSeekArbiterTest {
             scripts.add(script)
             if (script == JsPrompt.CLEAR_SCRIPT) return """{"cleared":true}"""
             if (script.contains("window.__tbPrompt=")) {
+                if (script.contains("R.filled")) {
+                    return """{"filled":true,"verifyLen":5}"""
+                }
                 submitted++
                 return if (submitSucceeds) {
                     """{"submitted":true}"""

@@ -29,7 +29,10 @@ class PluginArbiterTest {
         override suspend fun evalJs(script: String): String? {
             scripts.add(script)
             if (script == JsPrompt.CLEAR_SCRIPT) return """{"cleared":true}"""
-            if (script.contains("window.__tbPrompt=")) return """{"submitted":true}"""
+            if (script.contains("window.__tbPrompt=")) {
+                if (script.contains("R.filled")) return """{"filled":true,"verifyLen":5}"""
+                return """{"submitted":true}"""
+            }
             return if (snapshots.isEmpty()) null else snapshots.removeFirst()
         }
     }
