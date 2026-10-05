@@ -72,7 +72,8 @@ class LearnedStore(
             if (control == "send" && controls.sendSelector.isNotBlank()) {
                 return controls.sendSelector
             }
-            return controls.controls[control]?.selector?.takeIf { it.isNotBlank() && !it.stale }
+            return controls.controls[control]
+                ?.takeIf { it.selector.isNotBlank() && !it.stale }?.selector
         }
         val key = scopedKey(context, control)
         // Scoped map first, then the legacy host-level send selector only
