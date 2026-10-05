@@ -89,6 +89,14 @@ class JsPromptTest {
     }
 
     @Test
+    fun `fill reports verified length`() {
+        // Real pages can drop a fill during hydration; the ack must say
+        // what length actually stuck so the caller can retry.
+        val script = JsPrompt.fillScript("\"hi\"", "[\"textarea\"]")
+        assertTrue(script.contains("verifyLen"))
+    }
+
+    @Test
     fun `clear script deletes the bridge`() {
         assertTrue(JsPrompt.CLEAR_SCRIPT.contains("delete window.__tbPrompt"))
     }

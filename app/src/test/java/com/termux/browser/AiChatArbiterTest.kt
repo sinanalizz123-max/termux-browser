@@ -390,6 +390,63 @@ class AiChatArbiterTest {
     }
 
     @Test
+    fun `fill retry recovers a dropped first attempt`() = runBlocking {
+        fun snap(count: Int, text: String, generating: Boolean = false) =
+            """{"messageCount":$count,"lastText":"$text","generating":$generating,"promptFound":true,"submitFound":true,"composerEmpty":true}"""
+        val host = FakeHost()
+        // Probe + confirm see a healthy composer; the waiter baseline
+        // resets, then progressive texts appear and stabilize completed.
+        host.snapshots.addAll(
+            listOf(
+                healthy(), healthy(),
+                snap(0, ""),
+                snap(3, "a", true), snap(3, "ab", true),
+                snap(3, "abc", true), snap(3, "abcd", true)
+            ) + List(8) { snap(3, "abcde") }
+        )
+        )
+        var fills = 0
+        val retryHost = object : PageHost by host {
+            override suspend fun evalJs(script: String): String? {
+                host.scripts.add(script)
+                if (script.contains("R.filled")) {
+                    fills++
+                    // First fill attempt drops the text (hydration race).
+                    if (fills == 1) return """{"filled":true,"verifyLen":0}"""
+                    return """{"filled":true,"verifyLen":5}"""
+                }
+                if (script.contains("window.__tbPrompt=")) {
+                    host.submitted++
+                    return host.submitAck
+                }
+                return host.evalJs(script)
+            }
+        }
+        val results = ResultStore()
+        val policy = ControlPolicy()
+        val controller = BrowserController(retryHost, policy, ActivityLog(), announce = {})
+        val ui = object : UiRunner {
+            override suspend fun <T> run(block: suspend () -> T): T = block()
+        }
+        val arbiter = CommandArbiter(
+            this, ui, retryHost, controller, policy, results,
+            registry = AdapterRegistry(listOf(ChatGPTAdapter(), GenericAdapter()))
+        )
+        try {
+            val submitted = arbiter.submit(
+                BrowserCommand.AiChat("chatgpt", "Hello.", 100, "termux")
+            )
+            val id = (submitted as SubmitResult.Accepted).commandId
+            val stored = awaitResult(results, id)
+            assertTrue(stored!!.body.contains("completed"))
+            assertTrue(stored.body.contains("hi there!"))
+            assertEquals(2, fills)
+        } finally {
+            arbiter.close()
+        }
+    }
+
+    @Test
     fun `generation advance during wait cancels`() = runBlocking {
         val host = FakeHost()
         host.snapshots.addAll(

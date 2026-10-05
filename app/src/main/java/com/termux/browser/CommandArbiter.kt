@@ -354,10 +354,38 @@ class CommandArbiter(
             ?: failed(ErrorCodes.INVALID_REQUEST)
     }
 
+    /**
+     * Fill with verification: the script reports the composer length it
+     * actually sees afterwards. Retried because a hydrating page can drop
+     * the first attempt. Returns the verified length (0 = never stuck).
+     */
+    private suspend fun fillVerified(
+        boundedPrompt: String,
+        selectors: com.termux.browser.ai.SelectorSet
+    ): Int {
+        repeat(3) { attempt ->
+            if (attempt > 0) kotlinx.coroutines.delay(1000)
+            val fill = ui.run {
+                host.evalJs(
+                    JsPrompt.fillScript(
+                        JsPrompt.quotedPrompt(boundedPrompt),
+                        JsPrompt.quotedStringList(selectors.prompt)
+                    )
+                )
+            }
+            val ack = parseJsObject(fill)
+            val filled = ack?.get("filled")?.jsonPrimitive?.content == "true"
+            val len = ack?.get("verifyLen")?.jsonPrimitive?.content?.toIntOrNull() ?: 0
+            if (filled && len > 0) return len
+        }
+        return 0
+    }
+
     private suspend fun submitViaScript(
         boundedPrompt: String,
         selectors: com.termux.browser.ai.SelectorSet
     ): Boolean {
+        if (fillVerified(boundedPrompt, selectors) <= 0) return false
         val submitScript = JsPrompt.submitScript(
             JsPrompt.quotedPrompt(boundedPrompt),
             JsPrompt.quotedStringList(selectors.prompt),
@@ -377,16 +405,7 @@ class CommandArbiter(
         selectors: com.termux.browser.ai.SelectorSet,
         learned: String
     ): Boolean {
-        val fill = ui.run {
-            host.evalJs(
-                JsPrompt.fillScript(
-                    JsPrompt.quotedPrompt(boundedPrompt),
-                    JsPrompt.quotedStringList(selectors.prompt)
-                )
-            )
-        }
-        val filled = parseJsObject(fill)?.get("filled")?.jsonPrimitive?.content == "true"
-        if (!filled) return false
+        if (fillVerified(boundedPrompt, selectors) <= 0) return false
         // Let the framework re-render settle: filling detaches/replaces DOM
         // nodes, so a rect probed instantly can belong to a dying tree.
         // Then re-probe fresh up to 3 times; any dispatched tap counts.

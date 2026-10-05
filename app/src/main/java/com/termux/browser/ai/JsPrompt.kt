@@ -111,5 +111,6 @@ object JsPrompt {
             "pe.dispatchEvent(new InputEvent('input',{bubbles:true}));" +
             "try{var r=document.createRange();r.selectNodeContents(pe);r.collapse(false);" +
             "var s2=getSelection();s2.removeAllRanges();s2.addRange(r);}catch(_){}}" +
-            "else{R.reason='prompt-readonly';return JSON.stringify(R);}"
+            "else{R.reason='prompt-readonly';return JSON.stringify(R);}" +
+            "try{R.verifyLen=(('value' in pe)?pe.value:(pe.textContent||'')).length;}catch(_){R.verifyLen=0;}"
 }
