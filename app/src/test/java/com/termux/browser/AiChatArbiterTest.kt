@@ -200,7 +200,18 @@ class AiChatArbiterTest {
     @Test
     fun `learned send bypasses js submit for fill plus tap`() = runBlocking {
         val host = FakeHost()
-        host.snapshots.add(healthy())
+        // Probe + fast confirm + a stable answer for completion.
+        host.snapshots.addAll(
+            listOf(
+                healthy(), healthy(),
+                streaming("d"), streaming("do"), streaming("don"),
+                streaming("done", generating = false),
+                streaming("done", generating = false),
+                streaming("done", generating = false),
+                streaming("done", generating = false),
+                streaming("done", generating = false)
+            )
+        )
         var tappedAt: Pair<Double, Double>? = null
         val tappingHost = object : PageHost by host {
             override suspend fun evalJs(script: String): String? {
@@ -297,7 +308,18 @@ class AiChatArbiterTest {
     @Test
     fun `learned send uses fill plus native tap`() = runBlocking {
         val host = FakeHost()
-        host.snapshots.add(healthy())
+        // Probe + fast confirm + a stable answer for completion.
+        host.snapshots.addAll(
+            listOf(
+                healthy(), healthy(),
+                streaming("d"), streaming("do"), streaming("don"),
+                streaming("done", generating = false),
+                streaming("done", generating = false),
+                streaming("done", generating = false),
+                streaming("done", generating = false),
+                streaming("done", generating = false)
+            )
+        )
         var tappedAt: Pair<Double, Double>? = null
         val tappingHost = object : PageHost by host {
             override suspend fun evalJs(script: String): String? {
@@ -306,7 +328,7 @@ class AiChatArbiterTest {
                     return """{"filled":true,"verifyLen":5}"""
                 }
                 if (script.contains("__tbValidate")) {
-                    return """{"found":true,"tag":"DIV","role":"button","visible":true,"x":100,"y":200,"w":10,"h":10,"anchorFound":false,"matchesAnchor":false}"""
+                    return """{"found":true,"tag":"DIV","role":"button","visible":true,"x":100,"y":200,"w":20,"h":20,"anchorFound":false,"matchesAnchor":false}"""
                 }
                 if (script.contains("getBoundingClientRect")) {
                     return "\"{\\\"x\\\":100,\\\"y\\\":200,\\\"w\\\":10,\\\"h\\\":10}\""
@@ -350,7 +372,7 @@ class AiChatArbiterTest {
                     stored!!.body.contains("completed") ||
                         stored.body.contains("SUBMIT_UNCONFIRMED")
                 )
-                assertEquals(Pair(105.0, 205.0), tappedAt)
+                assertEquals(Pair(110.0, 210.0), tappedAt)
             } finally {
                 arbiter.close()
             }
@@ -633,7 +655,7 @@ class AiChatArbiterTest {
                     host.scripts.add(script)
                     if (script.contains("R.filled")) return """{"filled":true,"verifyLen":5}"""
                     if (script.contains("__tbValidate")) {
-                        return """{"found":true,"tag":"DIV","role":"button","visible":true,"x":100,"y":200,"w":10,"h":10,"anchorFound":false,"matchesAnchor":false}"""
+                        return """{"found":true,"tag":"DIV","role":"button","visible":true,"x":100,"y":200,"w":20,"h":20,"anchorFound":false,"matchesAnchor":false}"""
                     }
                     return host.evalJs(script)
                 }
