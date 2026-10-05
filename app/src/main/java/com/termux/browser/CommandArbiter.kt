@@ -387,12 +387,20 @@ class CommandArbiter(
         }
         val filled = parseJsObject(fill)?.get("filled")?.jsonPrimitive?.content == "true"
         if (!filled) return false
-        // The learned value is a selector, but quoting is quoting: any
-        // string becomes a safe JSON string literal the same way.
-        val rectRaw = ui.run {
-            host.evalJs(JsPrompt.rectScript(JsPrompt.quotedPrompt(learned)))
+        // Let the framework re-render settle: filling detaches/replaces DOM
+        // nodes, so a rect probed instantly can belong to a dying tree.
+        // Then re-probe fresh up to 3 times; any dispatched tap counts.
+        kotlinx.coroutines.delay(2000)
+        repeat(3) {
+            // The learned value is a selector, but quoting is quoting: any
+            // string becomes a safe JSON string literal the same way.
+            val rectRaw = ui.run {
+                host.evalJs(JsPrompt.rectScript(JsPrompt.quotedPrompt(learned)))
+            }
+            if (tappedAtRect(rectRaw)) return true
+            kotlinx.coroutines.delay(1000)
         }
-        return tappedAtRect(rectRaw)
+        return false
     }
 
     private suspend fun tappedAtRect(rectRaw: String?): Boolean {
