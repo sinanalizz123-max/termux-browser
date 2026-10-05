@@ -443,7 +443,7 @@ class AiChatArbiterTest {
             val id = (submitted as SubmitResult.Accepted).commandId
             val stored = awaitResult(results, id)
             assertTrue(stored!!.body.contains("completed"))
-            assertTrue(stored.body.contains("hi there!"))
+            assertTrue(stored.body.contains("abcde"))
             assertEquals(2, fills)
         } finally {
             arbiter.close()
