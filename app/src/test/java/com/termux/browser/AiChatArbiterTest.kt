@@ -404,7 +404,6 @@ class AiChatArbiterTest {
                 snap(3, "abc", true), snap(3, "abcd", true)
             ) + List(8) { snap(3, "abcde") }
         )
-        )
         var fills = 0
         val retryHost = object : PageHost by host {
             override suspend fun evalJs(script: String): String? {
